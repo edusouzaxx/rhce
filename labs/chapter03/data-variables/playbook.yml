@@ -1,0 +1,55 @@
+---
+- name: Install and configure apache
+  hosts: webserver
+  vars: 
+    web_pkg: httpd
+    firewall_pkg: firewalld
+    web_service: httpd
+    firewall_service: firewalld
+    python_pkg: python3-PyMySQL
+    rule: http
+
+  tasks:
+
+    - name: Install required packages
+      yum:
+        name:
+          - "{{ web_pkg }}"
+          - "{{ firewall_pkg }}"
+          - "{{ python_pkg }}"
+        state: latest
+
+    - name: Enable and start {{ firewall_service }}
+      service:
+        name: "{{ firewall_service }}"
+        enabled: true
+        state: started
+
+    - name: Enable and sratr {{ web_service }}
+      service:
+        name: "{{ web_service }}"
+        enabled: true
+        state: started
+
+    - name: Ensure web content is in place
+      copy:
+        content: "Example web content"
+        dest: /var/www/html/index.html
+
+    - name: Open firewall port for rule {{ rule }}
+      firewalld:
+        service: "{{ rule }}"
+        immediate: true
+        permanent: true
+        state: enabled
+
+- name: Verify Apache server connection
+  hosts: localhost
+  become: no
+  tasks:
+    
+    - name: Connect to apache server
+      uri:
+        url: http://servera.lab.example.com
+        status_code: 200
+

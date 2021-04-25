@@ -201,15 +201,349 @@ become_ask_pass = False
 
 # Chapter 3: Implementação de playbooks
 
-```
+
 
 ```
+f2727208@Workstation:~$ echo "autocmd FileType yaml setlocal ai ts=2 sw=2 et" >> $HOME/.vimrc
+```
+- Exemplo playbook
+
+```
+---
+  name: just an example
+  hosts: webservers
+  tasks:
+    - name: web server is enabled
+      service:
+        name: httpd
+        enabled: true
+
+    - name: NTP server is enabled
+      service:
+        name: chronyd
+        enabled: true
+
+```
+
+- Checar sintaxe 
+```
+[student@workstation ~]$ ansible-playbook --syntax-check webserver.yml
+```
+
+- Dry run
+
+```
+[student@workstation ~]$ ansible-playbook -C webserver.yml
+```
+
+- Run playbooks run
+
+```
+[student@workstation ~]$ ansible-playbook webserver.yml
+```
+
+- Multiple
+
+```
+---
+# This is a simple playbook with two plays
+
+- name: first play
+  hosts: web.example.com
+  tasks:
+    - name: first task
+      yum:
+        name: httpd
+        status: present
+
+    - name: second task
+      service:
+        name: httpd
+        enabled: true
+
+- name: second play
+  hosts: database.example.com
+  tasks:
+    - name: first task
+      service:
+        name: mariadb
+        enabled: true
+```
+
+- Remote Users and Privilege Escalation in Plays
+
+```
+---
+- name: /etc/hosts is up to date
+  hosts: datacenter-west
+  remote_user: automation
+  become: yes
+  become_method: sudo
+  cecome_user: root
+
+  tasks:
+    - name: server.example.com in /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: '192.0.2.42 server.example.com server'
+        state: present
+```
+
+- Finding Modules for Tasks
+
+```
+[student@workstation modules]$ ansible-doc -l
+[student@workstation modules]$ ansible-doc yum
+[student@workstation ~]$ ansible-doc -s yum   (EXEMPLO)
+```
+
+- YAML Strings
+```
+this is a string
+
+'this is another string'
+
+"this is yet another a string"
+```
+
+
+- YAML Strings new lines
+```
+include_newlines: |
+        Example Company
+        123 Main Street
+        Atlanta, GA 30303
+```
+
+
+- YAML Strings single line
+```
+fold_newlines: >
+        This is an example
+        of a long string,
+        that will become
+        a single sentence once folded.
+```
+
+
+- YAML Dictionaries
+```
+ You have seen collections of key-value pairs written as an indented block, as follows:
+
+  name: svcrole
+  svcservice: httpd
+  svcport: 80
+
+Dictionaries can also be written in an inline block format enclosed in curly braces, as follows:
+
+  {name: svcrole, svcservice: httpd, svcport: 80}
+  
+```
+
+- YAML Lists
+```
+ You have also seen lists written with the normal single-dash syntax:
+
+  hosts:
+    - servera
+    - serverb
+    - serverc
+
+Lists also have an inline format enclosed in square braces, as follows:
+
+hosts: [servera, serverb, serverc]
+```
+
+- YAML Dictionaries
+```
+```
+
+- Obsolete key=value Playbook Shorthand
+
+```
+- shorthand form (EVITAR)
+
+tasks:
+    - name: shorthand form
+      service: name=httpd enabled=true state=started
+
+- Normally you would write the same task as follows: 
+
+  tasks:
+    - name: normal form
+      service:
+        name: httpd
+        enabled: true
+        state: started
+```
+
+- Lab: Implementing Playbooks
+
+
 
 # Chapter 4: Gerenciamento de variáveis e fatos
 
+- Scopo de variáveis
+  -  Global scope: Variables set from the command line or Ansible configuration (MAIOR PRECEDêNCIA)
+  -  Play scope: Variables set in the play and related structures 
+  -  Host scope: Variables set on host groups and individual hosts by the inventory, fact gathering, or registered tasks (MENOR PRECEDÊNCIA)
+
+
+- Variables in playbooks
+```
+- hosts: all
+  vars:
+    user: joe
+    home: /home/joe
+
+or 
+
+- hosts: all
+  vars_files:
+    - vars/users.yml
+
+The playbook variables are then defined in that file or those files in YAML format:
+
+user: joe
+home: /home/joe
+```
+
+- Using variables in a play
+
+```
+vars:
+  user: joe
+
+tasks:
+  # This line will read: Creates the user joe
+  - name: Creates the user {{ user }}
+    user:
+      # This line will create the user named Joe
+      name: "{{ user }}"
+
+When a variable is used as the first element to start a value, quotes are mandatory. 
+
+yum:
+     name: {{ service }}
+            ^ here
+
+Should be written as:
+
+yum:
+     name: "{{ service }}"
+          
+```
+
+- Host Variables and Group Variables
+
+```
+[servers]
+demo1.example.com
+demo2.example.com
+
+[servers:vars]
+user=joe
+```
+
+- Using Directories to Populate Host and Group Variables (MELHOR)
+
+```
+[admin@station project]$ cat ~/project/inventory
+[datacenter1]
+demo1.example.com
+demo2.example.com
+
+[datacenter2]
+demo3.example.com
+demo4.example.com
+
+[datacenters:children]
+datacenter1
+datacenter2
+
+[admin@station project]$ cat ~/project/group_vars/datacenters
+package: httpd
+
+[admin@station project]$ cat ~/project/group_vars/datacenter1
+package: httpd
+
+[admin@station project]$ cat ~/project/group_vars/datacenter2
+package: apache
+
+[admin@station project]$ cat ~/project/host_vars/demo1.example.com
+package: httpd
+[admin@station project]$ cat ~/project/host_vars/demo2.example.com
+package: apache
+[admin@station project]$ cat ~/project/host_vars/demo3.example.com
+package: mariadb-server
+[admin@station project]$ cat ~/project/host_vars/demo4.example.com
+package: mysql-server
+
+```
+
+- Overriding Variables from the Command Line
+
+```
+[user@demo ~]$ ansible-playbook main.yml -e "package=apache"
+```
+
+- Using Arrays as Variables
+
+```
+users:
+  bjones:
+    first_name: Bob
+    last_name: Jones
+    home_dir: /users/bjones
+  acook:
+    first_name: Anne
+    last_name: Cook
+    home_dir: /users/acook
+    
+You can then use the following variables to access user data: 
+
+# Returns 'Bob'
+users.bjones.first_name
+
+# Returns '/users/acook'
+users.acook.home_dir
+
+ Because the variable is defined as a Python dictionary, an alternative syntax is available.
+
+# Returns 'Bob'
+users['bjones']['first_name']
+
+# Returns '/users/acook'
+users['acook']['home_dir']
+```
+
+- Capturing Command Output with Registered Variables
+
+```
+---
+- name: Installs a package and prints the result
+  hosts: all
+  tasks:
+    - name: Install the package
+      yum:
+        name: httpd
+        state: installed
+      register: install_result
+
+    - debug: var=install_result
+```
+
+
+- Ansible vault
+
 ```
 
 ```
+
+
+
+
+
 
 # Chapter 5: Implementação de controle de tarefas
 
