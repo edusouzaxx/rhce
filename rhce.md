@@ -537,12 +537,249 @@ users['acook']['home_dir']
 - Ansible vault
 
 ```
+[student@demo ~]$ cat secret.yml
+my_secret: "yJJvPqhsiusmmPPZdnjndkdnYNDjdj782meUZcw"
 
+[student@demo ~]$ ansible-vault create secret.yml
+New Vault password: redhat
+Confirm New Vault password: redhat
+
+[student@demo ~]$ ansible-vault view secret.yml
+
+[student@demo ~]$ ansible-vault edit secret.yml
+
+[student@demo ~]$ ansible-vault encrypt secret1.yml (ARQUIVO EXISTENTE)
+
+[student@demo ~]$ ansible-vault rekey secret.yml (TROCAR SENHA)
+```
+
+- Ansible-vault em playbooks
+```
+[student@demo ~]$ ansible-playbook site.yml
+ERROR: A vault password must be specified to decrypt vars/api_key.yml
+
+[student@demo ~]$ ansible-playbook --vault-id @prompt site.yml
+Vault password (default): redhat
+
+[student@demo ~]$ ansible-playbook --ask-vault-pass site.yml
+Vault password: redhat
 ```
 
 
+- Estrutura com vault
+
+```
+.
+├── ansible.cfg
+├── group_vars
+│   └── webservers
+│       └── vars
+├── host_vars
+│   └── demo.example.com
+│       ├── vars
+│       └── vault
+├── inventory
+└── playbook.yml
+
+ Then the administrator can use ansible-vault to encrypt the vault file, while leaving the vars file as plain text. 
+
+```
+
+-  Sensitive playbook variables can be placed in a separate file which is encrypted with Ansible Vault and which is included in the playbook through a vars_files directive.
 
 
+- Exercício
+
+
+```
+[student@workstation data-secret]$ ansible-vault edit secret.yml
+Vault password: redhat
+
+username: ansibleuser1
+pwhash: $6$jf...uxhP1
+
+---
+- name: create user accounts for all our servers
+  hosts: devservers
+  become: True
+  remote_user: devops
+  vars_files:
+    - secret.yml
+  tasks:
+    - name: Creating user from secret.yml
+      user:
+        name: "{{ username }}"
+        password: "{{ pwhash }}"
+
+[student@workstation data-secret]$ ansible-playbook --syntax-check --ask-vault-pass create_users.yml
+Vault password (default): redhat
+
+or
+
+[student@workstation data-secret]$ ansible-playbook --syntax-check --vault-id @prompt create_users.yml
+Vault password (default): redhat
+
+- Utilizando arquivo
+
+[student@workstation data-secret]$ echo 'redhat' > vault-pass
+[student@workstation data-secret]$ chmod 0600 vault-pass
+[student@workstation data-secret]$ ansible-playbook --vault-password-file=vault-pass create_users.yml
+[student@workstation data-secret]$ ssh -o PreferredAuthentications=password ansibleuser1@servera.lab.example.com
+[ansibleuser1@servera ~]$ exit
+```
+
+- Managing Facts
+
+Ansible facts are variables that are automatically discovered by Ansible on a managed host.
+
+```
+[user@demo ~]$ cat facts.yml
+---
+- name: Fact dump
+  hosts: all
+  tasks:
+    - name: Print all facts
+      debug:
+        var: ansible_facts
+
+[user@demo ~]$ ansible-playbook facts.yml
+```
+
+-  Remember that when a variable's value is a hash/dictionary, there are two syntaxes that can be used to retrieve the value. To take two examples from the preceding table:
+
+    ansible_facts['default_ipv4']['address'] can also be written ansible_facts.default_ipv4.address
+
+    ansible_facts['dns']['nameservers'] can also be written ansible_facts.dns.nameservers 
+
+```
+---
+- hosts: all
+  tasks:
+  - name: Prints various Ansible facts
+    debug:
+      msg: >
+        The default IPv4 address of {{ ansible_facts.fqdn }}
+        is {{ ansible_facts.default_ipv4.address }}
+```
+
+- Ansible Facts Injected as Variables
+
+```
+[user@demo ~]$ ansible demo1.example.com -m setup (ad-hoc que retorna facts)
+```
+
+
+- Turning off Fact Gathering
+```
+---
+- name: This play gathers no facts automatically
+  hosts: large_farm
+  gather_facts: no
+```
+
+- Creating Custom Facts
+
+ Custom facts allow administrators to define certain values for managed hosts, which plays might use to populate configuration files or conditionally run tasks. By default, the setup module loads custom facts from files and scripts in each managed host's /etc/ansible/facts.d directory. The name of each file or script must end in .fact in order to be used. Dynamic custom fact scripts must output JSON-formatted facts and must be executable. 
+```
+[user@demo1 ~]$ cat /etc/ansible/facts.d/host.fact
+
+[packages]
+web_package = httpd
+db_package = mariadb-server
+
+[users]
+user1 = joe
+user2 = jane
+
+[user@demo ~]$ ansible demo1.example.com -m setup (ad-hoc que retorna facts)
+```
+
+- Custom facts can be used the same way as default facts in playbooks:
+
+```
+[user@demo ~]$ cat playbook.yml
+---
+- hosts: all
+  tasks:
+  - name: Prints various Ansible facts
+    debug:
+      msg: >
+           The package to install on {{ ansible_facts['fqdn'] }}
+           is {{ ansible_facts['ansible_local']['custom']['packages']['web_package'] }}
+
+[user@demo ~]$ ansible-playbook playbook.yml
+PLAY ***********************************************************************
+
+TASK [Gathering Facts] *****************************************************
+ok: [demo1.example.com]
+
+TASK [Prints various Ansible facts] ****************************************
+ok: [demo1.example.com] => {
+    "msg": "The package to install on demo1.example.com  is httpd"
+}
+
+PLAY RECAP *****************************************************************
+demo1.example.com    : ok=2    changed=0    unreachable=0    failed=0
+```
+
+- Using Magic Variables
+ Some variables are not facts or configured through the setup module, but are also automatically set by Ansible. These magic variables can also be useful to get information specific to a particular managed host.
+
+Four of the most useful are:
+
+hostvars
+
+    Contains the variables for managed hosts, and can be used to get the values for another managed host's variables. It does not include the managed host's facts if they have not yet been gathered for that host. 
+group_names
+
+    Lists all groups the current managed host is in. 
+groups
+
+    Lists all groups and hosts in the inventory. 
+inventory_hostname
+
+    Contains the host name for the current managed host as configured in the inventory. This may be different from the host name reported by facts for various reasons. 
+
+
+[user@demo ~]$ ansible localhost -m debug -a 'var=hostvars["localhost"]'
+```
+localhost | SUCCESS => {
+    "hostvars[\"localhost\"]": {
+        "ansible_check_mode": false,
+        "ansible_connection": "local",
+        "ansible_diff_mode": false,
+        "ansible_facts": {},
+        "ansible_forks": 5,
+        "ansible_inventory_sources": [
+            "/home/student/demo/inventory"
+        ],
+        "ansible_playbook_python": "/usr/bin/python2",
+        "ansible_python_interpreter": "/usr/bin/python2",
+        "ansible_verbosity": 0,
+        "ansible_version": {
+            "full": "2.7.0",
+            "major": 2,
+            "minor": 7,
+            "revision": 0,
+            "string": "2.7.0"
+        },
+        "group_names": [],
+        "groups": {
+            "all": [
+                "serverb.lab.example.com"
+            ],
+            "ungrouped": [],
+            "webservers": [
+                "serverb.lab.example.com"
+            ]
+        },
+        "inventory_hostname": "localhost",
+        "inventory_hostname_short": "localhost",
+        "omit": "__omit_place_holder__18d132963728b2cbf7143dd49dc4bf5745fe5ec3",
+        "playbook_dir": "/home/student/demo"
+    }
+}
+```
 
 
 # Chapter 5: Implementação de controle de tarefas
