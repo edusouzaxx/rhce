@@ -1378,13 +1378,92 @@ handlers:
 # Chapter 6: Implantação de arquivos em hosts gerenciados
 
 ###
-
 ```
 
 ```
 
 # Chapter 7: Gerenciamento de projetos grandes
 
+### Ensuring a File Exists on Managed Hosts
+```
+- name: Touch a file and set permissions
+  file:
+    path: /path/to/file
+    owner: user1
+    group: group1
+    mode: 0640
+    state: touch
+```
+
+### Modifying File Attributes
+```
+$ ls -Z samba_file
+-rw-r--r-- owner group unconfined_u:object_r:user_home_t:s0 samba_file
+
+- name: SELinux type is set to samba_share_t
+  file:
+    path: /path/to/samba_file
+    setype: samba_share_t
+
+$ ls -Z samba_file
+-rw-r--r--  owner group unconfined_u:object_r:samba_share_t:s0 samba_file
+```
+### Making SELinux File Context Changes Persistent
+-  The file module acts like chcon when setting file contexts. Changes made with that module could be unexpectedly undone by running restorecon. After using file to set the context, you can use sefcontext from the collection of System modules to update the SELinux policy like semanage fcontext. 
+```
+- name: SELinux type is persistently set to samba_share_t
+  sefcontext:
+    target: /path/to/samba_file
+    setype: samba_share_t
+    state: present
+  
+$ ls -Z samba_file
+-rw-r--r--  owner group unconfined_u:object_r:samba_share_t:s0 samba_file
+```
+
+### Copying and Editing Files on Managed Hosts
+```
+- copy
+- fetch
+- lineinfile
+- blockinfile
+- file (absent para remover)
+```
+
+### Retrieving the Status of a File on Managed Hosts
+```
+- name: Verify the checksum of a file
+  stat:
+    path: /path/to/file
+    checksum_algorithm: md5
+  register: result
+
+- debug
+    msg: "The checksum of the file is {{ result.stat.checksum }}"
+```
+### Retrieving all atributes
+```
+- name: Examine all stat output of /etc/passwd
+  hosts: localhost
+
+  tasks:
+    - name: stat /etc/passwd
+      stat:
+        path: /etc/passwd
+      register: results
+
+    - name: Display stat results
+      debug:
+        var: results
+```
+### Syncronize files (rsync)
+```
+- name: synchronize local file to remote files
+  synchronize:
+    src: file
+    dest: /path/to/file
+```
+###
 ```
 
 ```
