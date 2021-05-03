@@ -1377,13 +1377,6 @@ handlers:
 
 # Chapter 6: Implantação de arquivos em hosts gerenciados
 
-###
-```
-
-```
-
-# Chapter 7: Gerenciamento de projetos grandes
-
 ### Ensuring a File Exists on Managed Hosts
 ```
 - name: Touch a file and set permissions
@@ -1463,10 +1456,129 @@ $ ls -Z samba_file
     src: file
     dest: /path/to/file
 ```
+### Exercicio
+```
+---
+- name: Modifying and Copying files 
+  hosts: servers
+  become: true
+  remote_user: root
+  tasks:
+    - name: Fetch files from hosts
+      fetch:
+        src: /var/log/secure
+        dest: secure-backups
+        flat: no
+
+---
+- name: Modifying and Copying files 
+  hosts: all
+  become: true
+  remote_user: root
+  tasks:
+    - name: Copy files to hosts
+      copy:
+        src: /home/student/file-manage/files/users.txt 
+        dest: /home/devops/users.txt 
+        owner: devops
+        group: devops
+        mode:  u+rw,g-wx,o-rwx
+        setype: samba_share_t
+
+[student@workstation file-manage]$ ansible all -m command -a 'ls -Z' -u devops
+
+---
+- name: Using the file module to ensure SELinux file context
+  hosts: all
+  remote_user: root
+  tasks:
+    - name:  SELinux file context is set to defaults
+      file:
+        path: /home/devops/users.txt
+        seuser: _default
+        serole: _default
+        setype: _default
+        selevel: _default
+
+---
+- name: Add text to an existing file
+  hosts: all
+  remote_user: devops
+  tasks:
+    - name: Add a single line of text to a file
+      lineinfile:
+        path: /home/devops/users.txt
+        line: This line was added by the lineinfile module.
+        state: present
+
+
+---
+- name: Add block of text to a file
+  hosts: all
+  remote_user: devops
+  tasks:
+    - name: Add a block of text to an existing file
+      blockinfile:
+        path: /home/devops/users.txt
+        block: |
+          This block of text consists of two lines.
+          They have been added by the blockinfile module.
+        state: present
+
+---
+- name: Use the file module to remove a file
+  hosts: all
+  remote_user: devops
+  tasks:
+    - name: Remove a file from managed hosts
+      file:
+        path: /home/devops/users.txt
+        state: absent
+```
+
+### Deploying Custom Files with Jinja2 Templates
+```
+arquivo_exemplo.txt
+{# /etc/hosts line #}  ESSE NÃO VAI APARECER
+# {{ ansible_managed }} ESSE VAI APARECER
+{{ ansible_facts['default_ipv4']['address'] }}    {{ ansible_facts['hostname'] }} (VIA ANSIBLE FACTS)
+Port {{ ssh_port }} (DEFINIDA EM UMA VARIÁVEL)
+
+tasks:
+  - name: template render
+    template:
+      src: /tmp/arquivo_exemplo.txt
+      dest: /tmp/dest-config-file.txt
+
+```
+
 ###
 ```
 
 ```
+
+###
+```
+
+```
+
+###
+```
+
+```
+
+###
+```
+
+```
+
+###
+```
+
+```
+
+# Chapter 7: Gerenciamento de projetos grandes
+
 
 # Chapter 8: Simplificação de playbooks com funções
 
