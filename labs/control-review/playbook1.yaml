@@ -1,0 +1,80 @@
+---
+- name: Playbook Control Lab
+  hosts: webservers
+  vars_files: vars.yml
+  tasks:
+
+    # Imprimir facts variables
+
+    - name: Imprimir facts variables 
+      debug:
+        var: ansible_facts
+
+    # Fail Fast Message
+   
+    - name: Send message if requirements fail
+      fail:
+        msg: "System does not have minimum requirements"
+      when: >
+        (ansible_facts.memtotal_mb < min_ram_mb)
+        or
+        (ansible_facts.distribution != "RedHat")
+
+    # Install All Packages
+
+    - name: Ensure required packages are present
+      yum:
+       name: "{{ packages }}"
+       state: latest
+
+    # Enable and Start Services
+ 
+    - name: Ensure services are started
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop: "{{ services }}"
+
+    # Block of config tasks
+
+    - name: Block of config tasks
+      block:
+
+        - name: Create ssl directory
+          file:
+            state: directory
+            path: "{{ ssl_cert_dir }}"
+
+        - name: Copy web config files to hosts 
+          copy:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+          loop: "{{ web_config_files }}"
+          notify: restart web service
+
+      rescue:
+
+        - name: Send message if something in block fail
+          debug:
+            msg: "One or more of the configuration changes failed, but the web service is still active."
+
+
+    # Configure the firewall
+
+    - name: ensure web ports are open
+      firewalld:
+        service: "{{ item }}"
+        immediate: true
+        permanent: true
+        state: enabled
+      loop:
+        - http
+        - https
+
+  # Add handlers
+  handlers:
+    - name: restart web service
+      service:
+        name: httpd
+        state: restarted

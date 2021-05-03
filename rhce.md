@@ -781,14 +781,603 @@ localhost | SUCCESS => {
 }
 ```
 
+### Guided Exercise: Managing Facts
+
+```
+[student@workstation data-facts]$ ansible webserver -m setup
+
+vi /home/student/data-facts/custom.fact (TEM QUE SER .fact  E NÃO .facts)
+
+[general]
+package = httpd
+service = httpd
+state = started
+enabled = true
+
+vi setup_facts.yml
+---
+- name: Install remote facts
+  hosts: webserver
+  vars:
+    remote_dir: /etc/ansible/facts.d
+    facts_file: custom.fact
+  tasks:
+    - name: Create the remote directory
+      file:
+        state: directory
+        recurse: yes
+        path: "{{ remote_dir }}"
+    - name: Install the new facts
+      copy:
+        src: "{{ facts_file }}"
+        dest: "{{ remote_dir }}"
+
+
+vi install-server.yml
+---
+- name: Install Apache and starts the service
+  hosts: webserver
+
+  tasks:
+    - name: Install the required package
+      yum:
+        name: "{{ ansible_facts['ansible_local']['custom']['general']['package'] }}"
+        state: latest
+
+    - name: Start the service
+      service:
+        name: "{{ ansible_facts['ansible_local']['custom']['general']['service'] }}"
+        state: "{{ ansible_facts['ansible_local']['custom']['general']['state'] }}"
+        enabled: "{{ ansible_facts['ansible_local']['custom']['general']['enabled'] }}"
+
+[student@workstation data-facts]$ ansible servera.lab.example.com -m command -a 'systemctl status httpd'
+Unit httpd.service could not be found.non-zero return code
+
+[student@workstation data-facts]$ ansible-playbook --syntax-check install-server.yml
+[student@workstation data-facts]$ ansible-playbook install-server.yml
+[student@workstation data-facts]$ ansible servera.lab.example.com -m command -a 'systemctl status httpd'
+
+
+```
+
+### Lab: Managing Variables and Facts
+
+
+```
+
+```
 
 # Chapter 5: Implementação de controle de tarefas
+
+## Writing Loops and Conditional Tasks
+
+### Simple loop
+
+```
+- name: Postfix and Dovecot are running
+  service:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - postfix
+    - dovecot
+
+```
+
+### Simple loop variable
+
+```
+vars:
+  mail_services:
+    - postfix
+    - dovecot
+
+tasks:
+  - name: Postfix and Dovecot are running
+    service:
+      name: "{{ item }}"
+      state: started
+    loop: "{{ mail_services }}"
+```
+
+### Loops over a List of Hashes or Dictionaries
+
+```
+- name: Users exist and are in the correct groups
+  user:
+    name: "{{ item.name }}"
+    state: present
+    groups: "{{ item.groups }}"
+  loop:
+    - name: jane
+      groups: wheel
+    - name: joe
+      groups: root
+```
+### Earlier-Style Loop Keywords (with_items,with_file,with_sequence)
+
+```
+  vars:
+    data:
+      - user0
+      - user1
+      - user2
+  tasks:
+    - name: "with_items"
+      debug:
+        msg: "{{ item }}"
+      with_items: "{{ data }}"
+```
+
+### Using Register Variables with Loops
+```
+---
+- name: Loop Register Test
+  gather_facts: no
+  hosts: localhost
+  tasks:
+    - name: Looping Echo Task
+      shell: "echo This is my item: {{ item }}"
+      loop:
+        - one
+        - two
+      register: echo_results1
+
+    - name: Show echo_results variable
+      debug:
+        var: echo_results2
+
+```
+### Using Register Variables with Loops (FILTRANDO A SAÍDA)
+
+```
+---
+- name: Loop Register Test
+  gather_facts: no
+  hosts: localhost
+  tasks:
+    - name: Looping Echo Task
+      shell: "echo This is my item: {{ item }}"
+      loop:
+        - one
+        - two
+      register: echo_results
+
+    - name: Show stdout from the previous task.
+      debug:
+        msg: "STDOUT from previous task: {{ item.stdout }}"
+      loop: "{{ echo_results['results'] }}"
+```
+
+## Running Tasks Conditionally
+
+```
+---
+- name: Simple Boolean Task Demo
+  hosts: all
+  vars:
+    run_my_task: true
+
+  tasks:
+    - name: httpd package is installed
+      yum:
+        name: httpd
+      when: run_my_task
+```
+### If the my_service variable is not defined, then the task is skipped without an error. 
+
+```
+---
+- name: Test Variable is Defined Demo
+  hosts: all
+  vars:
+    my_service: httpd
+
+  tasks:
+    - name: "{{ my_service }} package is installed"
+      yum:
+        name: "{{ my_service }}"
+      when: my_service is defined
+```
+### Using ansible_distribution variable 
+
+```
+---
+- name: Demonstrate the "in" keyword
+  hosts: all
+  gather_facts: yes
+  vars:
+    supported_distros:
+      - RedHat
+      - Fedora
+  tasks:
+    - name: Install httpd using yum, where supported
+      yum:
+        name: http
+        state: present
+      when: ansible_distribution in supported_distros
+```
+
+### Testing Multiple Conditions
+
+```
+when: ansible_distribution == "RedHat" or ansible_distribution == "Fedora"
+
+when: ansible_distribution_version == "7.5" and ansible_kernel == "3.10.0-327.el7.x86_64"
+
+- list (AND operation)
+
+when:
+  - ansible_distribution_version == "7.5"
+  - ansible_kernel == "3.10.0-327.el7.x86_64"
+
+when: >
+    ( ansible_distribution == "RedHat" and
+      ansible_distribution_major_version == "7" )
+    or
+    ( ansible_distribution == "Fedora" and
+    ansible_distribution_major_version == "28" )
+```
+
+### Combining Loops and Conditional Tasks 
+
+```
+- name: install mariadb-server if enough space on root
+  yum:
+    name: mariadb-server
+    state: latest
+  loop: "{{ ansible_mounts }}"
+  when: item.mount == "/" and item.size_available > 300000000
+```
+
+### ### Combining Loops and Conditional Tasks and register variables
+
+```
+---
+- name: Restart HTTPD if Postfix is Running
+  hosts: all
+  tasks:
+    - name: Get Postfix server status
+      command: /usr/bin/systemctl is-active postfix 1
+      ignore_errors: yes2
+      register: result3
+
+    - name: Restart Apache HTTPD based on Postfix status
+      service:
+        name: httpd
+        state: restarted
+      when: result.rc == 0
+```
+
+### Guided Exercise: Writing Loops and Conditional Tasks
+
+```
+---
+- name: Ensure MariaDB is installed and running
+  hosts: database_dev
+  vars:
+    mariadb_packages:
+      - mariadb-server
+      - python3-PyMySQL
+  tasks:
+
+    - name: Install MariaDB
+      yum:
+        name: "{{ item }}"
+        state: latest
+      loop: "{{ mariadb_packages }}"
+
+    - name: Start MariaDB service
+      service:
+        name: mariadb
+        state: started
+        enabled: true
+
+---
+- name: Ensure MariaDB is installed and running
+  hosts: database_prod
+  vars:
+    mariadb_packages:
+      - mariadb-server
+      - python3-PyMySQL
+  tasks:
+
+    - name: Install MariaDB
+      yum:
+        name: "{{ item }}"
+        state: latest
+      loop: "{{ mariadb_packages }}"
+      when: ansible_distribution == "RedHat" 
+
+    - name: Start MariaDB service
+      service:
+        name: mariadb
+        state: started
+        enabled: true
+
+
+ansible database_prod -m command  -a 'cat /etc/redhat-release' -u devops --become
+```
+
+### Ansible Handlers
+
+- Handlers are tasks that respond to a notification triggered by other tasks. 
+- Normally, handlers are used to reboot hosts and restart services. 
+- Handlers can be considered as inactive tasks that only get triggered when explicitly invoked using a notify statement. 
+
+```
+tasks:
+  - name: copy demo.example.conf configuration template
+    template:
+      src: /var/lib/templates/demo.example.conf.template
+      dest: /etc/httpd/conf.d/demo.example.conf
+    notify:
+      - restart apache
+
+handlers:
+  - name: restart apache
+    service:
+      name: httpd
+      state: restarted
+```
+### Ansible multiple Handlers
+
+```
+tasks:
+  - name: copy demo.example.conf configuration template
+    template:
+      src: /var/lib/templates/demo.example.conf.template
+      dest: /etc/httpd/conf.d/demo.example.conf
+    notify:
+      - restart mysql
+      - restart apache
+
+handlers:
+  - name: restart mysql
+    service:
+      name: mariadb
+      state: restarted
+
+  - name: restart apache
+    service:
+      name: httpd
+      state: restarted
+```
+
+- Handlers always run in the order specified by the handlers section of the play. 
+- Handlers normally run after all other tasks in the play complete.
+- If two handlers are incorrectly given the same name, only one will run.
+- Even if more than one task notifies a handler, the handler only runs once.
+- If a task that includes a notify statement does not report a changed result (for example, a package is already installed and the task reports ok), the handler is not notified. 
+
+
+### Handlers exercise
+
+```
+---
+- name: MariaDB server is installed
+  hosts: databases
+  vars:
+    db_packages:
+      - mariadb-server
+      - python3-PyMySQL
+    db_service: mariadb
+    resources_url: http://materials.example.com/labs/control-handlers
+    config_file_url: "{{ resources_url }}/my.cnf.standard"
+    config_file_dst: /etc/my.cnf
+  tasks:
+
+    - name: "Install {{ db_packages }}"
+      yum:
+        name: "{{ db_packages }}"
+        state: latest
+      notify: set db password
+  
+    - name: Start DB service
+      service:
+        name: "{{ db_service }}
+        state: started
+        enabled: true
+    
+    - name: "The {{ config_file_dst }} is installed"
+      get_url:
+        url: "{{ config_file_url }}"
+        dest: "{{ config_file_dst }}"
+        owner: mysql
+        group: mysql
+        force: yes
+      notify: restart db service
+
+  handlers:
+
+    - name: restart db service
+      service:
+        name: "{{ db_service }}"
+        state: restarted
+
+    - name: set db password
+      mysql_user:
+        name: root
+        password: redhat
+
+```
+
+## Handling Task Failure
+### Ignoring Task Failure
+
+```
+- name: Latest version of notapkg is installed
+  yum:
+    name: notapkg
+    state: latest
+  ignore_errors: yes
+```
+
+### Forcing Execution of Handlers after Task Failure
+
+```
+---
+- hosts: all
+  force_handlers: yes
+  tasks:
+    - name: a task which always notifies its handler
+      command: /bin/true
+      notify: restart the database
+
+    - name: a task which fails because the package doesn't exist
+      yum:
+        name: notapkg
+        state: latest
+
+  handlers:
+    - name: restart the database
+      service:
+        name: mariadb
+        state: restarted
+```
+
+### Specifying Task Failure Conditions
+
+```
+tasks:
+  - name: Run user creation script
+    shell: /usr/local/bin/create_users.sh
+    register: command_result
+    failed_when: "'Password missing' in command_result.stdout"
+```
+### Specifying Task Failure Conditions - fail module
+
+```
+tasks:
+  - name: Run user creation script
+    shell: /usr/local/bin/create_users.sh
+    register: command_result
+    ignore_errors: yes
+
+  - name: Report script failure
+    fail:
+      msg: "The password is missing in the output"
+    when: "'Password missing' in command_result.stdout"
+```
+
+### Specifying When a Task Reports “Changed” Results
+
+- Allways report ok or failed
+
+```
+  - name: get Kerberos credentials as "admin"
+    shell: echo "{{ krb_admin_pass }}" | kinit -f admin
+    changed_when: false
+```
+-  changed based on the output of the module
+
+```
+tasks:
+  - shell:
+      cmd: /usr/local/bin/upgrade-database
+    register: command_result
+    changed_when: "'Success' in command_result.stdout"
+    notify:
+      - restart_database
+
+handlers:
+  - name: restart_database
+     service:
+       name: mariadb
+       state: restarted
+```
+### Ansible Blocks and Error Handling
+
+-  block: Defines the main tasks to run. 
+-  rescue: Defines the tasks to run if the tasks defined in the block clause fail. 
+-  always: Defines the tasks that will always run independently of the success or failure of tasks defined in the block and rescue clauses. 
+
+```
+- name: block example
+  hosts: all
+  tasks:
+    - name: installing and configuring Yum versionlock plugin 
+      block:
+      - name: package needed by yum
+        yum:
+          name: yum-plugin-versionlock
+          state: present
+      - name: lock version of tzdata
+        lineinfile:
+          dest: /etc/yum/pluginconf.d/versionlock.list
+          line: tzdata-2016j-1
+          state: present
+      when: ansible_distribution == "RedHat"
+```
+ 
+ - rescue and always statements
+
+```
+  tasks:
+    - name: Upgrade DB
+      block:
+        - name: upgrade the database
+          shell:
+            cmd: /usr/local/lib/upgrade-database
+      rescue:
+        - name: revert the database upgrade
+          shell:
+            cmd: /usr/local/lib/revert-database
+      always:
+        - name: always restart the database
+          service:
+            name: mariadb
+            state: restarted
+```
+
+-  The when condition on a block clause also applies to its rescue and always clauses if present. 
+### Guided Exercise: Handling Task Failure
+
+- TEM QUE TER O NAME ENTRE tasks E block
+
+```
+---
+- name: Controle de erros
+  hosts: databases
+  become: true
+  vars:
+    web_package: http
+    db_package: mariadb-server
+    db_service: mariadb
+  tasks:
+    - name: Install server
+
+      block:
+        - name: Install web package (nome errado)
+          yum:
+            name: "{{ web_package }}"
+            state: latest
+#          ignore_errors: yes
+#          failed_when: web_package == "httpd"
+    
+      rescue:
+        - name: Install database
+          yum:
+            name: "{{ db_package }}"
+            state: latest
+
+      always:
+        - name: Start database
+          service:
+            name: "{{ db_service }}"
+            state: started
+
+```
+
+## Lab: Implementing Task Control
 
 ```
 
 ```
 
 # Chapter 6: Implantação de arquivos em hosts gerenciados
+
+###
 
 ```
 
