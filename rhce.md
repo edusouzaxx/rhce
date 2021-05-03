@@ -1552,6 +1552,92 @@ tasks:
 
 ```
 
+### Managing Templated Files
+```
+ansible_managed = Gerenciado pelo Ansible (NO ANSIBLE.CFG)
+
+{{ ansible_managed }}  (NO ARQUIVO TEMPLATE)
+```
+
+### Using Loops
+```
+{% for user in users %}
+      {{ user }}
+{% endfor %}
+```
+
+### Using Loops with index number
+```
+{# for statement #}
+{% for myuser in users if not myuser == "root" %}
+User number {{ loop.index }} - {{ myuser }}
+{% endfor %}
+```
+User number 1 - Edu
+User number 2 - Bastiao
+
+###  myhosts variable has been defined in the inventory file
+```
+{% for myhost in groups['myhosts'] %}
+{{ myhost }}
+{% endfor %}
+```
+
+### Gerando um etc/hosts com todos os hosts do inventario
+```
+cat templates/hosts.j2
+
+{% for hosts in groups['all'] %}
+{{ hostvars['host']['ansible_facts´]['default_ipv4']['address'] hostvars['host']['ansible_facts´]['fqdn'] hostvars['host']['ansible_facts´]['hostname'] }}
+{% endfor %}
+
+- name: /etc/hosts is up to date
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Deploy /etc/hosts
+      template:
+        src: templates/hosts.j2
+        dest: /etc/hosts
+```
+
+### Using Conditionals
+-  result variable is placed in the deployed file only if the value of the finished variable is True. 
+```
+{% if finished %}
+{{ result }}
+{% endif %}
+```
+``IMPORTANTE:  You can use Jinja2 loops and conditionals in Ansible templates, but not in Ansible Playbooks. ``
+
+### Variable Filters
+
+Jinja2 provides filters which change the output format for template expressions (for example, to JSON). There are filters available for languages such as YAML and JSON. The to_json filter formats the expression output using JSON, and the to_yaml filter formats the expression output using YAML.
+```
+{{ output | to_json }}
+{{ output | to_yaml }}
+```
+Additional filters are available, such as the to_nice_json and to_nice_yaml filters, which format the expression output in either JSON or YAML human readable format.
+```
+{{ output | to_nice_json }}
+{{ output | to_nice_yaml }}
+```
+Both the from_json and from_yaml filters expect strings in either JSON or YAML format, respectively, to parse them.
+```
+{{ output | from_json }}
+{{ output | from_yaml }}
+```
+
+### Variable Tests
+
+The expressions used with when clauses in Ansible Playbooks are Jinja2 expressions. Built-in Ansible tests used to test return values include failed, changed, succeeded, and skipped. The following task shows how tests can be used inside of conditional expressions.
+```
+tasks:
+...output omitted...
+  - debug: msg="the execution was aborted"
+    when: returnvalue is failed
+```
+
 ###
 ```
 
@@ -1562,20 +1648,6 @@ tasks:
 
 ```
 
-###
-```
-
-```
-
-###
-```
-
-```
-
-###
-```
-
-```
 
 # Chapter 7: Gerenciamento de projetos grandes
 
