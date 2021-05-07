@@ -1,0 +1,9 @@
+---
+network_conections:
+  - name: ens4
+    type: ethernet
+    state: up
+    autoconnect: yes
+    ip:
+      address:
+        - 172.25.250.40/24

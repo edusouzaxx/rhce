@@ -1,0 +1,11 @@
+---
+- name: Change default target
+  hosts: webservers
+  become: true
+  tasks:
+
+    - name: Create link to default target
+      file:
+        src: /usr/lib/systemd/graphical.target
+        dest: /etc/systemd/system/default.target
+        state: link

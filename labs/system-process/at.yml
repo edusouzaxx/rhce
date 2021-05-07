@@ -1,0 +1,14 @@
+---
+- name: Manage sytem process
+  hosts: webservers
+  become: true
+  tasks:
+
+    - name: Create at entry
+      at:
+        command: "date > /home/devops/my_at_date_time"
+        count: 2
+        units: minutes
+        unique: yes
+        state: present
+

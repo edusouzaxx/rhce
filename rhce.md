@@ -1638,33 +1638,1302 @@ tasks:
     when: returnvalue is failed
 ```
 
-###
+### Lab: Implantação de arquivos em hosts gerenciados
 ```
+cat motd.j2
+System total memory: {{ ansible_facts['memtotal_mb'] }} MiB.
+System processor count: {{ ansible_facts['processor_count'] }}
 
+---
+- name: Configure system
+  hosts: all
+  remote_user: devops
+  become: true
+  tasks:
+    - name: Configure a custom /etc/motd
+      template:
+        src: motd.j2
+        dest: /etc/motd
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Check file exists
+      stat:
+        path: /etc/motd
+      register: motd
+
+    - name: Display stat results
+      debug:
+        var: motd
+
+    - name: Copy custom /etc/issue file
+      copy:
+        src: files/issue
+        dest: /etc/issue
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Ensure /etc/issue.net is a symlink to /etc/issue
+      file:
+        src: /etc/issue
+        dest: /etc/issue.net
+        state: link
+        owner: root
+        group: root
+        force: yes
 ```
-
-###
-```
-
-```
-
 
 # Chapter 7: Gerenciamento de projetos grandes
+
+### Selecting Hosts with Host Patterns
+
+```
+
+[student@controlnode ~]$ cat myinventory
+web.example.com
+data.example.com
+
+[lab]
+labhost1.example.com
+labhost2.example.com
+
+[test]
+test1.example.com
+test2.example.com
+
+[datacenter1]
+labhost1.example.com
+test1.example.com
+
+[datacenter2]
+labhost2.example.com
+test2.example.com
+
+[datacenter:children]
+datacenter1
+datacenter2
+
+[new]
+192.168.2.1
+192.168.2.2
+
+Forma de usar:
+
+- hosts: ungrouped
+- hosts: '!test1.example.com,development'
+- hosts: '*.example.com'
+- hosts: '192.168.2.*'
+- hosts: 'datacenter*'
+- hosts: labhost1.example.com,test2.example.com,192.168.2.2  
+- hosts: lab,datacenter1
+- hosts: lab,data*,192.168.2.2
+- hosts: lab,&datacenter1  (logical AND.)
+- hosts: datacenter,!test2.example.com (logical NOT)
+- hosts: all,!datacenter1
+```
+
+- The colon character (:) can be used instead of a comma. However, the comma is the preferred separator, especially when working with IPv6 addresses as managed host names. 
+
+### Managing Dynamic Inventories 
+
+```
+ansible-inventory --list -i inventory
+
+Inventário (opção -i) pode ser um diretório com vários inventários
+
+ansible -i inventory/inventorya.py webservers --list-hosts
+chmod 755 inventory/inventorya.py
+ansible -i inventory/inventorya.py webservers --list-hosts
+inventory/inventorya.py --list
+
+
+ansible webservers --list-hosts
+[servers:children]
+webservers
+
+Se rodar assim dá WARNINGS
+TEM QUE TER PAI
+
+[webservers]
+
+[servers:children]
+webservers
+
+```
+
+
+### Configure Parallelism in Ansible Using Forks
+
+- The maximum number of simultaneous connections that Ansible makes is controlled by the forks parameter in the Ansible configuration file. It is set to 5 by default, which can be verified using one of the following. 
+```
+[student@demo ~]$ grep forks ansible.cfg
+forks          = 5
+
+[student@demo ~]$ ansible-config dump |grep -i forks
+DEFAULT_FORKS(default) = 5
+
+[student@demo ~]$ ansible-config list |grep -i forks
+DEFAULT_FORKS:
+  description: Maximum number of forks Ansible will use to execute tasks on target
+  - {name: ANSIBLE_FORKS}
+  - {key: forks, section: defaults}
+  name: Number of task forks
+
+[defaults]
+inventory=inventory
+remote_user=devops
+forks=4
+...output omitted...
+```
+
+- You can override the default setting for forks from the command line in the Ansible configuration file. Both the ansible and the ansible-playbook commands offer the -f or --forks options to specify the number of forks to use. 
+### Managing Rolling Updates
+
+- Fazer de pouco em pouco assim como no k8s
+- In the example below, Ansible executes the play on two managed hosts at a time
+- Roda também handlers antes quando for o caso
+
+```
+---
+- name: Rolling update
+  hosts: webservers
+  serial: 2
+  tasks:
+  - name: latest apache httpd package is installed
+    yum:
+      name: httpd
+      state: latest
+    notify: restart apache
+
+  handlers:
+  - name: restart apache
+    service:
+      name: httpd
+      state: restarted
+
+```
+- In the previous scenario with serial: 2 set, if something is wrong and the play fails for the first two hosts processed, then the playbook will abort and the remaining three hosts will not be run through the play. This is a useful feature because only a subset of the servers would be unavailable, leaving the service degraded rather than down. 
+- The serial keyword can also be specified as a percentage.
+### Including or Importing Files
+
+- import content, it is a static operation. Ansible preprocesses imported content when the playbook is initially parsed, before the run starts. 
+- include content, it is a dynamic operation. . Ansible processes included content during the run of the playbook, as content is reached. 
+
+```
+[admin@node ~]$ cat webserver_tasks.yml
+- name: Installs the httpd package
+  yum:
+    name: httpd
+    state: latest
+
+- name: Starts the httpd service
+  service:
+    name: httpd
+    state: started
+```
+
+### Importing Task Files
+
+```
+---
+- name: Install web server
+  hosts: webservers
+  tasks:
+  - import_tasks: webserver_tasks.yml
+```
+
+- imports the tasks when the playbook is parsed
+- conditional statements set on the import, such as when, are applied to each of the tasks that are imported. 
+- You cannot use loops with the import_tasks feature. 
+- If you use a variable to specify the name of the file to import, then you cannot use a host or group inventory variable. 
+
+### Including Task Files
+```
+---
+- name: Install web server
+  hosts: webservers
+  tasks:
+  - include_tasks: webserver_tasks.yml
+```
+- conditional statements such as when set on the include determine whether or not the tasks are included in the play at all.
+- If you run ansible-playbook --list-tasks to list the tasks in the playbook, then tasks in the included task files are not displayed. 
+- You cannot use ansible-playbook --start-at-task to start playbook execution from a task that is in an included task file. 
+- You cannot use a notify statement to trigger a handler name that is in an included task file. You can trigger a handler in the main playbook that includes an entire task file, in which case all tasks in the included file will run. 
+
+### Defining Variables for External Plays and Tasks
+
+```
+---
+  - name: Install the httpd package
+    yum:
+      name: httpd
+      state: latest
+  - name: Start the httpd service
+    service:
+      name: httpd
+      enabled: true
+      state: started
+
+---
+  - name: Install the {{ package }} package
+    yum:
+      name: "{{ package }}"
+      state: latest
+  - name: Start the {{ service }} service
+    service:
+      name: "{{ service }}"
+      enabled: true
+      state: started
+
+...output omitted...
+  tasks:
+    - name: Import task file and set variables
+      import_tasks: task.yml
+      vars:
+        package: httpd
+        service: httpd
+```
+
+###    VER VÍDEO INCLUDE AND IMPORT!!!!!!!!!!!!!!!
+
+- resumindo se precisar usar um when usa include
+
+```
+
+```
+
+### Lab: Managing Large Projects
+
+```
+Dividir um playbook em outros playbooks
+simplificar
+colocar o rool update com a tag serial
+
+```
 
 
 # Chapter 8: Simplificação de playbooks com funções
 
+### Defining Variables and Defaults
+
+- vars/main.yml  
+  - high precedence
+  - can not be overridden by inventory variables.
+
+- defaults/main.yml
+  - low precedence
+  - easily overridden by any other variable, including inventory variables. 
+
+- Define a specific variable in either vars/main.yml or defaults/main.yml, but not in both places. 
+
+### Using roles in a play
+```
+---
+- hosts: remote.example.com
+  roles:
+    - role: role1
+    - role: role2
+      var1: val1
+      var2: val2
+
+Another equivalent YAML syntax which you might see in this case is:
+
+---
+- hosts: remote.example.com
+  roles:
+      - role: role1
+    - { role: role2, var1: val1, var2: val2 }
+
+```
+
+### Controlling Order of Execution
+```
+- name: Play to illustrate order of execution
+  hosts: remote.example.com
+  pre_tasks:
+    - debug:
+        msg: 'pre-task'
+      notify: my handler
+  roles:
+    - role1
+  tasks:
+    - debug:
+        msg: 'first task'
+      notify: my handler
+  post_tasks:
+    - debug:
+        msg: 'post-task'
+      notify: my handler
+  handlers:
+    - name: my handler
+      debug:
+        msg: Running my handler
+
+OBS: The my handler task is executed three times: 
+```
+
+### Roles can be added to a play using an ordinary task
+
+```
+- name: Execute a role as a task
+  hosts: remote.example.com
+  tasks:
+    - name: A normal task
+      debug:
+        msg: 'first task'
+    - name: A task to include role2 here
+      include_role: role2
+```
+
+### Installing RHEL System Roles
+
+```
+[root@host ~]# ansible-galaxy list
+[root@host ~]# yum install rhel-system-roles
+[root@host ~]# ansible-galaxy list
+[root@host ~]# ls -l /usr/share/ansible/roles/
+[root@host ~]# ls -l /usr/share/doc/rhel-system-roles/
+```
+
+### Guided Exercise: Reusing Content with System Roles
+```
+
+```
+
+### Creating the Role Directory Structure
+
+```
+[user@host roles]$ ansible-galaxy init motd
+[user@host ~]$ tree motd
+[user@host ~]$ tree roles/
+roles/
+└── motd
+    ├── defaults
+    │   └── main.yml
+    ├── files
+    ├── handlers
+    ├── meta
+    │   └── main.yml
+    ├── README.md
+    ├── tasks
+    │   └── main.yml
+    └── templates
+        └── motd.j2
+
+
+[user@host ~]$ cat roles/motd/tasks/main.yml
+---
+# tasks file for motd
+
+- name: deliver motd file
+  template:
+    src: motd.j2
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: 0444
+
+
+
+[user@host ~]$ cat roles/motd/templates/motd.j2
+This is the system {{ ansible_facts['hostname'] }}.
+
+Today's date is: {{ ansible_facts['date_time']['date'] }}.
+
+Only use this system with permission.
+You can ask {{ system_owner }} for access.
+
+
+[user@host ~]$ cat roles/motd/defaults/main.yml
+---
+system_owner: user@host.example.com
+```
+
+### Recommended Practices for Role Content Development
+
+- Maintain each role in its own version control repository. Ansible works well with git-based repositories. 
+- Sensitive information, such as passwords or SSH keys, should not be stored in the role repository. 
+- Use ansible-galaxy init to start your role
+- Create and maintain README.md and meta/main.yml files to document what your role is for, who wrote it, and how to use it. 
+- Keep your role focused on a specific purpose or function.
+- Reuse and refactor roles often. Resist creating new roles for edge configurations. 
+
+### Defining Role Dependencies
+
+- The following is a sample meta/main.yml file.
+- By default, roles are only added as a dependency to a playbook once. 
+- If another role also lists it as a dependency it will not be run again.
+- This behavior can be overridden by setting the allow_duplicates variable to yes in the meta/main.yml file. 
+
+```
+---
+dependencies:
+  - role: apache
+    port: 8080
+  - role: postgres
+    dbname: serverlist
+    admin_user: felix
+
+```
+
+### Using the Role in a Playbook
+```
+---
+- name: use motd role playbook
+  hosts: remote.example.com
+  remote_user: devops
+  become: true
+  roles:
+    - motd
+```
+
+### Changing a Role's Behavior with Variables
+```
+---
+- name: use motd role playbook
+  hosts: remote.example.com
+  remote_user: devops
+  become: true
+  vars:
+    system_owner: someone@host.example.com
+  roles:
+    - role: motd
+
+OU
+
+---
+- name: use motd role playbook
+  hosts: remote.example.com
+  remote_user: devops
+  become: true
+  roles:
+    - role: motd
+      system_owner: someone@host.example.com
+```
+-  The value of any variable defined in a role's defaults directory will be overwritten if that same variable is defined:
+
+    - in an inventory file, either as a host variable or a group variable.
+
+    - in a YAML file under the group_vars or host_vars directories of a playbook project
+
+    - as a variable nested in the vars keyword of a play
+
+    - as a variable when including the role in roles keyword of a play 
+
+### Important - Variable precedence 
+
+- Almost any other variable will override a role's default variables: inventory variables, play vars, inline role parameters, and so on.
+
+- Fewer variables can override variables defined in a role's vars directory. Facts, variables loaded with include_vars, registered variables, and role parameters are some variables that can do that. Inventory variables and play vars cannot. This is important because it helps keep your play from accidentally changing the internal functioning of the role.
+
+- However, variables declared inline as role parameters, like the last of the preceding examples, have very high precedence. They can override variables defined in a role's vars directory. If a role parameter has the same name as a variable set in play vars, a role's vars, or an inventory or playbook variable, the role parameter overrides the other variable. 
+### Ansible-galaxy 
+```
+https://galaxy.ansible.com/
+[user@host ~]$ ansible-galaxy search 'redis' --platforms EL
+[user@host ~]$ ansible-galaxy info geerlingguy.redis
+[user@host project]$ ansible-galaxy install geerlingguy.redis -p roles/
+```
+
+### Ansible-galaxy  install roles with requirements file
+```
+cat roles/requirements.yml
+- src: geerlingguy.redis
+  version: "1.5.0"
+
+[user@host project]$ ansible-galaxy install -r roles/requirements.yml -p roles 
+```
+
+### Ansible-galaxy  install roles with requirements file - other options
+```
+[user@host project]$ cat roles/requirements.yml
+# from Ansible Galaxy, using the latest version
+- src: geerlingguy.redis
+
+# from Ansible Galaxy, overriding the name and using a specific version
+- src: geerlingguy.redis
+  version: "1.5.0"
+  name: redis_prod
+
+# from any Git-based repository, using HTTPS
+- src: https://gitlab.com/guardianproject-ops/ansible-nginx-acme.git
+  scm: git
+  version: 56e00a54
+  name: nginx-acme
+
+# from any Git-based repository, using SSH
+- src: git@gitlab.com:guardianproject-ops/ansible-nginx-acme.git
+  scm: git
+  version: master
+  name: nginx-acme-ssh
+
+# from a role tar ball, given a URL;
+#   supports 'http', 'https', or 'file' protocols
+- src: file:///opt/local/roles/myrole.tar
+  name: myrole
+```
+
+### Ansible-galaxy list
+```
+[user@host project]$ ansible-galaxy list
+- geerlingguy.redis, 1.6.0
+- myrole, (unknown version)
+- nginx-acme, 56e00a54
+- nginx-acme-ssh, master
+- redis_prod, 1.5.0
+```
+
+### Lab: Simplifying Playbooks with Roles
+
+```
+---
+- name: Configure Dev Web Server
+  hosts: dev_webserver
+  force_handlers: yes
+  roles:
+    - apache.developer_configs
+  pre_tasks:
+    - name: Check SELinux configuration
+      block:
+        - include_role:
+            name: rhel-system-roles.selinux
+      rescue:
+        # Fail if failed for a different reason than selinux_reboot_required.
+        - name: Check for general failure
+          fail:
+            msg: "SELinux role failed."
+          when: not selinux_reboot_required
+
+        - name: Restart managed host
+          reboot:
+            msg: "Ansible rebooting system for updates."
+
+        - name: Reapply SELinux role to complete changes
+          include_role:
+            name: rhel-system-roles.selinux
+```
+
+###
 ```
 
 ```
 
 # Chapter 9: Solução de problemas do Ansible
 
+### Debug module
+```
+- name: Display free memory
+  debug:
+    msg: "Free memory for this system is {{ ansible_facts['memfree_mb'] }}"
+
+- name: Display the "output" variable
+  debug:
+    var: output
+    verbosity: 2
+```
+
+### Troubleshooting Playbooks
+
+```
+[student@demo ~]$ ansible-playbook play.yml --syntax-check
+
+[student@demo ~]$ ansible-playbook play.yml --step
+
+[student@demo ~]$ ansible-playbook play.yml --start-at-task="start httpd service"
+```
+
+### Debug playbook
+```
+-v 	The output data is displayed.
+-vv 	Both the output and input data are displayed.
+-vvv 	Includes information about connections to managed hosts.
+-vvvv 	Includes additional information such scripts that are executed on each remote host, and the user that is executing each script. 
+```
+
+### Using Check Mode as a Testing Tool
+
+```
+[student@demo ~]$ ansible-playbook --check playbook.yml
+
+ The following task is always run in check mode, and does not make changes.
+
+  tasks:
+    - name: task always in check mode
+      shell: uname -a
+      check_mode: yes
+ 
+ The following task is always run normally, even when started with ansible-playbook --check.
+
+  tasks:
+    - name: task always runs even in check mode
+      shell: uname -a
+      check_mode: no
+
+ The ansible-playbook command also provides a --diff option. This option reports the changes made to the template files on managed hosts. If used with the --check option, those changes are displayed in the command's output but not actually made.
+
+[student@demo ~]$ ansible-playbook --check --diff playbook.yml
+```
+
+### Testing with Modules - uri
+
+- The uri module provides a way to check that a RESTful API is returning the required content. 
+```
+ tasks:
+    - uri:
+        url: http://api.myapp.com
+        return_content: yes
+      register: apiresponse
+
+    - fail:
+        msg: 'version was not provided'
+      when: "'version' not in apiresponse.content"
+```
+
+### Testing with Modules - script
+
+-  fails if the return code for that script is nonzero. 
+```
+tasks:
+    - script: check_free_memory
+```
+
+### Testing with Modules - stat
+
+- an application is still running if /var/run/app.lock exists, in which case the play should abort. 
+```
+tasks:
+    - name: Check if /var/run/app.lock exists
+      stat:
+        path: /var/run/app.lock
+      register: lock
+
+    - name: Fail if the application is running
+      fail:
+      when: lock.stat.exists
+```
+
+### Testing with Modules - assert
+
+- The assert module supports a that option that takes a list of conditionals. 
+```
+  tasks:
+    - name: Check if /var/run/app.lock exists
+      stat:
+        path: /var/run/app.lock
+      register: lock
+
+    - name: Fail if the application is running
+      assert:
+        that:
+          - not lock.stat.exists
+```
+
+### Troubleshooting Connections
+
+- You can set a host inventory variable, ansible_host, that will override the inventory name with a different name or IP address and be used by Ansible to connect to that host. 
+- This variable could be set in the host_vars file or directory for that host, or could be set in the inventory file itself. 
+```
+web4.phx.example.com ansible_host=192.0.2.4
+```
+
+### Testing Managed Hosts Using Ad Hoc Commands
+```
+[student@demo ~]$ ansible demohost -m ping
+[student@demo ~]$ ansible demohost -m ping --become (TESTA SE BECOME FUNCIONA)
+[student@demo ~]$ ansible demohost -m command -a 'df'
+[student@demo ~]$ ansible demohost -m command -a 'free -m'
+```
+
+###
+```
+
+```
+
+###
 ```
 
 ```
 
 # Chapter 10: Automatização de tarefas de administração do Linux
+
+
+### Managing Software and Subscriptions
+```
+## yum update
+
+- name: Update all packages
+  yum:
+    name: '*'
+    state: latest
+
+## yum group install 
+
+- name: Install Development Tools
+  yum:
+    name: '@Development Tools'
+    state: present
+
+- name: Inst perl AppStream module
+  yum:
+    name: '@perl:5.26/minimal'
+    state: present
+
+## gathering package facts
+
+---
+- name: Display installed packages
+  hosts: servera.lab.example.com
+  tasks:
+    - name: Gather info on installed packages
+      package_facts:
+        manager: auto
+
+    - name: List installed packages
+      debug:
+        var: ansible_facts.packages
+
+    - name: Display NetworkManager version
+      debug:
+        msg: "Version {{ansible_facts.packages['NetworkManager'][0].version}}"
+      when: "'NetworkManager' in ansible_facts.packages"
+
+## Selecting module to install
+---
+- name: Install the required packages on the web servers
+  hosts: webservers
+  tasks:
+    - name: Install httpd on RHEL
+      yum:
+        name: httpd
+        state: present
+      when: "ansible_distribution == 'RedHat'"
+
+    - name: Install httpd on Fedora
+      dnf:
+        name: httpd
+        state: present
+      when: "ansible_distribution == 'Fedora'"
+
+## generic package module 
+
+---
+- name: Install the required packages on the web servers
+  hosts: webservers
+  tasks:
+    - name: Install httpd
+      package:
+        name: httpd
+        state: present
+
+## Red Hat Subscription Management
+
+- name: Register and subscribe the system
+  redhat_subscription:
+    username: yourusername
+    password: yourpassword
+    pool_ids: poolID
+    state: present
+
+## Enabling Red Hat Software Repositories
+
+- name: Enable Red Hat repositories
+  rhsm_repository:
+    name:
+      - rhel-8-for-x86_64-baseos-rpms
+      - rhel-8-for-x86_64-baseos-debug-rpms
+    state: present
+
+## Configuring a Yum Repository
+
+---
+- name: Configure the company Yum repositories
+  hosts: servera.lab.example.com
+  tasks:
+    - name: Ensure Example Repo exists
+      yum_repository:
+        file: example   
+        name: example-internal
+        description: Example Inc. Internal YUM repo
+        baseurl: http://materials.example.com/yum/repository/
+        enabled: yes
+        gpgcheck: yes   
+        state: present
+
+## Importing an RPM GPG key
+
+---
+- name: Configure the company Yum repositories
+  hosts: servera.lab.example.com
+  tasks:
+    - name: Deploy the GPG public key
+      rpm_key:
+        key: http://materials.example.com/yum/repository/RPM-GPG-KEY-example
+        state: present
+
+    - name: Ensure Example Repo exists
+      yum_repository:
+        file: example
+        name: example-internal
+        description: Example Inc. Internal YUM repo
+        baseurl: http://materials.example.com/yum/repository/
+        enabled: yes
+        gpgcheck: yes
+        state: present
+
+```
+  
+### Guided Exercise: Managing Software and Subscriptions
+```
+---
+- name: Repository Configuration
+  hosts: all
+  vars:
+    custom_pkg: example-motd
+  tasks:
+    - name: Gather Package Facts
+      package_facts:
+        manager: auto
+
+    - name: Show Package Facts for the custom package
+      debug:
+        var: ansible_facts.packages[custom_pkg]
+      when: custom_pkg in ansible_facts.packages
+
+    - name: Ensure Example Repo exists
+      yum_repository:
+        name: example-internal
+        description: Example Inc. Internal YUM repo
+        file: example
+        baseurl: http://materials.example.com/yum/repository/
+        gpgcheck: yes
+
+    - name: Ensure Repo RPM Key is Installed
+      rpm_key:
+        key: http://materials.example.com/yum/repository/RPM-GPG-KEY-example
+        state: present
+
+    - name: Install Example motd package
+      yum:
+        name: "{{ custom_pkg }}"
+        state: present
+
+    - name: Gather Package Facts
+      package_facts:
+        manager: auto
+
+    - name: Show Package Facts for the custom package
+      debug:
+        var: ansible_facts.packages[custom_pkg]
+      when: custom_pkg in ansible_facts.packages
+
+[student@workstation system-software]$ ansible all -m yum -a 'name=example-motd state=absent'
+```
+
+### Managing Users and Authentication
+```
+- name: Add new user to the development machine and assign the appropriate groups.
+  user:
+    name: devops_user 
+    shell: /bin/bash 
+    groups: sys_admins, developers 
+    append: yes
+
+- name: Create a SSH key for user1
+  user:
+    name: user1
+    generate_ssh_key: yes
+    ssh_key_bits: 2048
+    ssh_key_file: .ssh/id_my_rsa
+
+- name: Verify that auditors group exists
+  group:
+    name: auditors
+    state: present
+
+- name: copy host keys to remote servers
+  known_hosts:
+    path: /etc/ssh/ssh_known_hosts
+    name: user1
+    key: "{{ lookup('file', 'pubkeys/user1') }}"
+
+- name: Set authorized key
+  authorized_key:
+    user: user1
+    state: present
+    key: "{{ lookup('file', '/home/user1/.ssh/id_rsa.pub') }}
+```
+
+### Guided Exercise: Managing Users and Authentication
+```
+---
+- name: Create multiple local users
+  hosts: webservers
+  vars_files:
+    - vars/users_vars.yml
+  handlers:
+  - name: Restart sshd
+    service:
+      name: sshd
+      state: restarted
+
+  tasks:
+
+  - name: Add webadmin group
+    group:
+      name: webadmin
+      state: present
+
+  - name: Create user accounts
+    user:
+      name: "{{ item.username }}"
+      groups: "{{ item.groups }}"
+    loop: "{{ users }}"
+
+  - name: Add authorized keys
+    authorized_key:
+      user: "{{ item.username }}"
+      key: "{{ lookup('file', 'files/'+ item.username + '.key.pub') }}"
+    loop: "{{ users }}"
+
+  - name: Modify sudo config to allow webadmin users sudo without a password
+    copy:
+      content: "%webadmin ALL=(ALL) NOPASSWD: ALL"
+      dest: /etc/sudoers.d/webadmin
+      mode: 0440
+
+  - name: Disable root login via SSH
+    lineinfile:
+      dest: /etc/ssh/sshd_config
+      regexp: "^PermitRootLogin"
+      line: "PermitRootLogin no"
+    notify: "Restart sshd"
+```
+
+### Managing the Boot Process and Scheduled Processes
+
+```
+- name: remove tempuser.
+  at:
+    command: userdel -r tempuser
+    count: 20
+    units: minutes
+    unique: yes
+
+- cron:
+  name: "Flush Bolt"
+  user: "root"
+  minute: 45
+  hour: 11
+  job: "php ./app/nut cache:clear"
+
+- name: reload web server
+  systemd:
+    name: apache2
+    state: reload
+    daemon-reload: yes
+
+- name: "Reboot after patching"
+  reboot:
+    reboot_timeout: 180
+
+- name: force a quick reboot
+  reboot:
+
+- name: Run a templated variable (always use quote filter to avoid injection)
+    shell: cat {{ myfile|quote }}
+
+# To sanitize any variables, It is suggested that you use “{{ var | quote }}” instead of just “{{ var }}”
+
+
+- name: This command only
+  command: /usr/bin/scrape_logs.py arg1 arg2
+    args:1
+      chdir: scripts/
+      creates: /path/to/script
+
+---
+- name:
+  hosts: webservers
+  vars:
+    local_shell:  "{{ ansible_env }}"1
+  tasks:
+    - name: Printing all the environment​ variables in Ansible
+      debug:
+        msg: "{{ local_shell }}"
+```
+
+### Guided Exercise: Managing the Boot Process and Scheduled Processes
+```
+---
+- name: Recurring cron job
+  hosts: webservers
+  become: true
+
+  tasks:
+    - name: Crontab file exists
+      cron:
+        name: Add date and time to a file
+        minute: "*/2"
+        hour: 9-16
+        weekday: 1-5
+        user: devops
+        job: date >> /home/devops/my_date_time_cron_job
+        cron_file: add-date-time
+        state: present
+
+[student@workstation system-process]$ ansible webservers -u devops -b -a "cat /etc/cron.d/add-date-time"
+[student@workstation system-process]$ ansible webservers -u devops -b -a "cat /home/devops/my_date_time_cron_job"
+
+---
+- name: Remove scheduled cron job
+  hosts: webservers
+  become: true
+
+  tasks:
+    - name: Cron job removed
+      cron:
+        name: Add date and time to a file
+        user: devops
+        cron_file: add-date-time
+        state: absent
+
+[student@workstation system-process]$ ansible webservers -u devops -b  -a "cat /etc/cron.d/add-date-time"
+
+# 
+
+[student@workstation system-process]$ ansible webservers -u devops -b -a "systemctl get-default"
+
+---
+- name: Change default boot target
+  hosts: webservers
+  become: true
+
+  tasks:
+    - name: Default boot target is graphical
+      file:
+        src: /usr/lib/systemd/system/graphical.target
+        dest: /etc/systemd/system/default.target
+        state: link
+
+[student@workstation system-process]$ ansible-playbook --syntax-check set_default_boot_target_graphical.yml
+
+
+# Reboot
+
+---
+- name: Reboot hosts
+  hosts: webservers
+  become: true
+
+  tasks:
+    - name: Hosts are rebooted
+      reboot:
+
+[student@workstation system-process]$ ansible webservers -u devops -b -a "who -b"
+
+
+```
+
+### Managing Storage
+
+```
+# parted
+
+- name: Create a new primary partition with a size of 1GiB
+  parted:
+    device: /dev/sdb
+    number: 1
+    state: present
+    part_end: 1GiB
+
+# lvg
+
+- name: Create a volume group on top of /dev/sda1 with physical extent size = 32MB
+  lvg:
+    vg: vg.services
+    pvs: /dev/sda1
+    pesize: 32
+
+- name: Create or resize a volume group on top of /dev/sdb1 and /dev/sdc5.
+  lvg:
+    vg: vg.services
+    pvs: /dev/sdb1,/dev/sdc5
+
+# lvol
+
+- name: Create a logical volume of 512g.
+  lvol:
+    vg: firefly
+    lv: test
+    size: 512g
+
+# filesystem
+
+- name: Create a ext2 filesystem on /dev/sdb1
+  filesystem:
+    fstype: ext2
+    dev: /dev/sdb1
+
+# mount 
+
+- name: Mount up device by UUID
+  mount:
+    path: /home
+    src: UUID=b3e48f45-f933-4c8e-a700-22a159ec9077
+    fstype: xfs
+    opts: noatime
+    state: present
+
+# swap
+
+- name: Create new swap VG
+  lvg: vg=vgswap pvs=/dev/vda1 state=present
+
+- name: Create new swap LV
+  lvol: vg=vgswap lv=lvswap size=10g
+
+- name: Format swap LV
+  command: mkswap /dev/vgswap/lvswap
+  when: ansible_swaptotal_mb < 128
+
+- name: Activate swap LV
+  command: swapon /dev/vgswap/lvswap
+  when: ansible_swaptotal_mb < 128
+
+# storage_facts
+
+[user@controlnode ~]$ ansible webservers -m setup -a 'filter=ansible_devices'
+
+[user@controlnode ~]$ ansible webservers -m setup -a 'filter=ansible_device_links'
+
+[user@controlnode ~]$ ansible webservers -m setup -a 'filter=ansible_mounts'
+
+
+```
+
+### Guided Exercise: Managing Storage
+```
+
+---
+- name: Ensure Apache Storage Configuration
+  hosts: webservers
+  vars_files:
+    - storage_vars.yml
+  tasks:
+    - name: Correct partitions exist on /dev/vdb
+      parted:
+        device: /dev/vdb
+        number: "{{ item.number }}"
+        state: present
+        part_start: "{{ item.start }}"
+        part_end: "{{ item.end }}"
+      loop: "{{ partitions }}"
+
+    - name: Ensure Volume Groups Exist
+      lvg:
+        vg: "{{ item.name }}"
+        pvs: "{{ item.devices }}"
+      loop: "{{  volume_groups }}"
+
+    - name: Create each Logical Volume (LV) if needed
+      lvol:
+        vg: "{{ item.vgroup }}"
+        lv: "{{ item.name }}"
+        size: "{{ item.size }}"
+      loop: "{{ logical_volumes }}"
+      when: item.name not in ansible_lvm["lvs"]
+
+    - name: Ensure XFS Filesystem exists on each LV
+      filesystem:
+        fstype: xfs
+        dev: "/dev/{{ item.vgroup }}/{{ item.name }}"
+      loop: "{{ logical_volumes }}"
+
+    - name: Ensure the correct capacity for each LV
+      lvol:
+        vg: "{{ item.vgroup }}"
+        lv: "{{ item.name }}"
+        size: "{{ item.size }}"
+        resizefs: yes
+        force: yes
+      loop: "{{ logical_volumes }}"
+
+    - name: Each Logical Volume is mounted
+      mount:
+        path: "{{ item.mount_path }}"
+        src: "/dev/{{ item.vgroup }}/{{ item.name }}"
+        fstype: xfs
+        opts: noatime
+        state: mounted
+      loop: "{{ logical_volumes }}"
+
+
+[student@workstation system-storage]$ ansible all -m setup -a "filter=ansible_lvm"
+[student@workstation system-storage]$ ansible all -a lsblk
+[student@workstation system-storage]$ ansible all -a 'df -h '
+```
+
+### Managing Network Configuration
+
+```
+[user@controlnode ~]$ ansible-galaxy list
+
+---
+- name: Configure Network
+  hosts: webserver
+  vars:
+    network_provider: nm
+    network_connections:
+      - name: ens4
+        type: ethernet
+        state: up
+        autoconnect: yes
+        ip:
+          address:
+            - 172.25.250.30/24
+  roles:
+    - rhel-system-roles.network
+
+- name: NIC configuration
+  nmcli:
+    conn_name: ens4-conn 
+    ifname: ens4 
+    type: ethernet 
+    ip4: 172.25.250.30/24 
+    gw4: 172.25.250.1 
+    state: present 
+
+- name: Change hostname
+  hostname:
+    name: managedhost1
+
+- name: Enabling http rule
+  firewalld:
+    service: http
+    permanent: yes
+    state: enabled
+
+- name: Moving eth0 to external
+  firewalld:
+    zone: external
+    interface: eth0
+    permanent: yes
+    state: enabled
+
+
+[user@controlnode ~]$ ansible webservers -m setup -a 'gather_subset=network filter=ansible_interfaces'
+
+[user@controlnode ~]$ ansible webservers -m setup -a 'gather_subset=network filter=ansible_ens4'
+```
+
+### Guided Exercise: Managing Network Configuration
+```
+
+```
+
+### Lab: Automating Linux Administration Tasks
 
 ```
 

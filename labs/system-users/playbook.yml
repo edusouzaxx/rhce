@@ -1,0 +1,44 @@
+---
+- name: Manage system users
+  hosts: all
+  vars_files: 
+    - vars/users_vars.yml
+  tasks:
+
+    - name: Create group webadmin
+      group:
+        name: webadmin
+        state: present
+
+    - name: Create users
+      user:
+        name: "{{ item.username }}"
+        groups: "{{ item.groups }}"
+      loop: "{{ users }}"
+
+    - name: Create authorized_keys
+      authorized_key:
+        user: "{{ item.username }}"
+        state: present
+        key: "{{ lookup('file', 'files/' + item.username + '.key.pub') }}"
+      loop: "{{ users }}"
+      
+    - name: Add sudo privilege to webadmin
+      copy:
+        content: "%webadmin ALL=(ALL) NOPASSWD: ALL"
+        dest: /etc/sudoers.d/webadmin
+        mode: 0440
+
+    - name: Remove root login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: "PermitRootLogin no"
+      notify: Restart sshd
+
+  handlers:
+
+    - name: Restart sshd
+      service:
+        name: sshd
+        state: restarted

@@ -1,0 +1,12 @@
+---
+- name: Manage sytem process
+  hosts: webservers
+  become: true
+  tasks:
+
+    - name: Create cron entry
+      cron:
+        name: Add date and time to a file
+        user: devops
+        cron_file: add-date-time 
+        state: absent
