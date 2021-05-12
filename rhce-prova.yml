@@ -1,12 +1,17 @@
 
 
+    when: inventory_hostname in groups['small_group']
+
+- Trabalhar com hostvars
+
+
 0 - vimrc do root ?
 
 1 - Instalação ansible
 
 2 - Configuração Inventário (dev,test,prod,balancers)
 
-2 - Script adho configura repositórios
+2 - Script adhoc configura repositórios
 
 3 - Criação play etc/issue de acordo com ambiente
     Development
@@ -27,16 +32,41 @@
 - instala httpd,firewalld, configura, habilita, com notify
 
 
-7 - Criação /etc/hosts com template , todos hosts do inventário 
+7 - Criação /etc/hosts com template , todos hosts do inventário , mas só copia pra um deles
     
     ip fqdn hostname 
+
+--- 
+- name: Generate /etc/hosts
+  hosts: localhost
+  tasks:
+
+    - name: Add IP address of all hosts to all hosts
+      lineinfile: 
+        dest: /home/student/rhce/files/etc/hosts
+        line: '{{ hostvars[item]["ansible_host"] }} {{ hostvars[item]["ansible_hostname"] }} {{ hostvars[item]["ansible_nodename"] }}'
+        state: present
+      with_items: groups['all']
+
+    - name: Copy files to host
+      copy:
+        src: /home/student/rhce/files/etc/hosts
+        dest: /etc/hosts
+        mode: 0644
+        owner: root
+        group: root
+
+      when: inventory_hostname in groups['small_group']
+
+
+
 
 
 8 - Configurar um requirements na pasta roles e instalar mudando o nome 
 
     roles: 
     - haproxy
-    - phpinfo 
+    - phpinfo -
 
 9 - Configurar um playbook para usar as roles de haproxy e phpinfo 
    
