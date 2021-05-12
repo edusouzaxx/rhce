@@ -1,0 +1,79 @@
+
+
+0 - vimrc do root ?
+
+1 - Instalação ansible
+
+2 - Configuração Inventário (dev,test,prod,balancers)
+
+2 - Script adho configura repositórios
+
+3 - Criação play etc/issue de acordo com ambiente
+    Development
+    Test
+    Production
+    Balancers
+
+4 - Play motd "You are at server FQDN with ip IPV4
+
+
+5 - Criação arquivo vault
+
+  - cria arquivo secret 
+  - cria arquivo com a senha 
+
+6 - Criação de um role do zero 
+
+- instala httpd,firewalld, configura, habilita, com notify
+
+
+7 - Criação /etc/hosts com template , todos hosts do inventário 
+    
+    ip fqdn hostname 
+
+
+8 - Configurar um requirements na pasta roles e instalar mudando o nome 
+
+    roles: 
+    - haproxy
+    - phpinfo 
+
+9 - Configurar um playbook para usar as roles de haproxy e phpinfo 
+   
+   dava erro na interface eth0 não tinha uma propriedade blablabla 
+
+   instala o haproxy no node [balancers] curl deve retornar cada hora um ip 
+
+
+10 - Instalar rhel-system-roles e utilizar a de timesync 
+
+   - deve mudar os server (IP)
+   - manter o provider 
+   - com iburst 
+
+11 - Playbook para criar lv 
+
+    - dá o nome do vg 
+    - se não existir o vg msg : O vg não existe 
+    - Se não tiver espaço suficiente : Não tem espaço suficiente 
+    - Então cria com espaço XX
+
+12 - Reencrypt
+
+    - reencriptar o secret criado 
+
+13 - Playbook que pega um arquivo com lista de usuários 
+
+    - case X instala no grupo dev 
+    - case Y instala no grupo prod 
+    - utilizar arquivo vault 
+    - utiliza arquivo vars
+    - utiliza arquivo senha . Como colocar no play ?
+
+
+14 - Criar o /devweb 
+
+      - link com /var/www/html/devweb 
+      - permissão tipo rwx com set UID 
+      - dependendo do usuário vai retornar um valor 
+      - tava dando erro de permissão 

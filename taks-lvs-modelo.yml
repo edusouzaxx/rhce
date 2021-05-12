@@ -1,0 +1,38 @@
+- name: failure test playbook
+  hosts: localhost
+  gather_facts: false
+  vars:
+    summary_information: |
+      PROVISIONER SUMMARY
+      *******************
+
+  tasks:
+    - name: ISSUE CERT
+      shell: certbot certonly --standalone -d student1.testworkshop.rhdemo.io --email ansible-network@redhat.com --noninteractive --agree-tos
+      register: issue_cert
+      until: issue_cert is not failed
+      retries: 5
+      ignore_errors: yes
+
+    - name: set facts for output
+      set_fact:
+      summary_information: |
+        {{summary_information}}
+      	- The Lets Encrypt certbot failed, please check https://letsencrypt.status.io/ to make sure the service is running
+      when: issue_cert is failed
+
+    - name: print out summary information
+      debug:
+        msg: "{{summary_information}}"
+
+
+
+OU ESSA !!!!!
+
+
+- name: Retry a task until a certain condition is met
+  ansible.builtin.shell: /usr/bin/foo
+  register: result
+  until: result.stdout.find("all systems go") != -1
+  retries: 5
+  delay: 10
