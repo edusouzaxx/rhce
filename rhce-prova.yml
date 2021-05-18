@@ -277,29 +277,58 @@ $ cat hosts.yml
 #  - manter o provider 
 #  - com iburst 
 
-$ firewall-cmd --permanent --add-service=ntp
-$ systemctl restart firewalld.service
-$ systemctl start ntpd
-$ systemctl enable ntpd
-$ ss -atun | grep 123
-$ timedatectl set-ntp true
-$ ntpq -p
-$ ntpstat
+yum install rhel-system-roles
 
-timedatectl 
-timedatectl set-ntp true
-chkconfig --list ntpd
-chronyc sources -v 
+ansible-galaxy list 
 
+ansible all -a 'timedatectl' 
+
+ansible all -a 'chronyc sources -v' 
+
+
+---
+# play_timesync.yml
+- name: Time Synchronization Play
+  hosts: servers
+  vars:
+    timesync_ntp_servers:
+      - hostname: 0.rhel.pool.ntp.org
+        iburst: yes
+      - hostname: 1.rhel.pool.ntp.org
+        iburst: yes
+      - hostname: 2.rhel.pool.ntp.org
+        iburst: yes
+    timezone: UTC
+
+  roles:
+    - rhel-system-roles.timesync
+
+  tasks:
+    - name: Set timezone
+      timezone:
+        name: "{{ timezone }}"
 
 
 ##########################################################################################
 # TASK 11 - Playbook para criar lv 
 ##########################################################################################
 # - dá o nome do vg 
-# - se não existir o vg msg : O vg não existe 
+# - se já existir o vg msg : O vg já existe 
+#
 # - Se não tiver espaço suficiente : Não tem espaço suficiente 
 # - Então cria com espaço XX
+
+
+vgcreate myvg /dev/vdb1
+A volume group called myvg already exists.
+
+
+pvcreate -n mylv -L 10G myvg
+
+Volume group "myvg" has insufficient free space (1279 extents): 
+
+
+
 
 
 
