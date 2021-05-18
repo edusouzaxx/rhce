@@ -1,109 +1,700 @@
-
+AnsibleUndefinedVariable: ansible.vars.hostvars.Hostvars object has no element
 
     when: inventory_hostname in groups['small_group']
 
 - Trabalhar com hostvars
 
+##########################################################################################
+# TASK
+##########################################################################################
+#  0 - vimrc do root ?
 
-0 - vimrc do root ?
-
-1 - Instalação ansible
-
-2 - Configuração Inventário (dev,test,prod,balancers)
-
-2 - Script adhoc configura repositórios
-
-3 - Criação play etc/issue de acordo com ambiente
-    Development
-    Test
-    Production
-    Balancers
-
-4 - Play motd "You are at server FQDN with ip IPV4
+autocmd FileType yaml setlocal ai ts=2 sw=2 et nu cuc
+autocmd FileType yaml colo desert
 
 
-5 - Criação arquivo vault
+##########################################################################################
+# COPY N PASTE
+##########################################################################################
+#
 
-  - cria arquivo secret 
-  - cria arquivo com a senha 
+v - selecionar
+y - copiar
+p - cplar
 
-6 - Criação de um role do zero 
+##########################################################################################
+# TASK 2 - Instalação ansible e Configuração Inventário (dev,test,prod,balancers)
+##########################################################################################
 
-- instala httpd,firewalld, configura, habilita, com notify
 
 
-7 - Criação /etc/hosts com template , todos hosts do inventário , mas só copia pra um deles
-    
-    ip fqdn hostname 
+##########################################################################################
+# TASK 2 - Script adhoc configura repositórios
+##########################################################################################
+#
+
+#!/bin/bash 
+
+ansible all -m yum_repository -a "name=elasticsearch-7.x \
+                                  state=present \
+                                  description='Elasticsearch repository for 7.x packages' \ 
+                                  baseurl=https://artifacts.elastic.co/packages/7.x/yum \
+                                  gpgcheck=true \
+                                  gpgkey=https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+
+
+
+##########################################################################################
+# TASK 3 - Criação play etc/issue de acordo com ambiente
+##########################################################################################
+# Development
+# Test
+# Production
+# Balancers
 
 --- 
-- name: Generate /etc/hosts
-  hosts: localhost
+- name: Configure /etc/issue 
+  hosts: all
+  become: true 
+  tasks: 
+
+  - name: Configure etc/issue at dev 
+    copy:
+      dest: /etc/issue 
+      content: "Development Environment"
+    when: inventory_hostname in groups['dev']
+
+  - name: Configure etc/issue at test 
+    copy:
+      dest: /etc/issue 
+      content: "Test Environment"
+    when: inventory_hostname in groups['test']
+
+  - name: Configure etc/issue at prod 
+    copy:
+      dest: /etc/issue 
+      content: "Production Environment"
+    when: inventory_hostname in groups['prod']
+
+
+##########################################################################################
+# TASK 4 - Play motd "You are at server FQDN with ip IPV4
+##########################################################################################
+# 
+# 
+
+$ cat motd.j2
+
+Welcome to host {{ansible_hostname}} with ip {{ ansible_default_ipv4.address }}
+
+
+--- 
+- name: Configure /etc/motd 
+  hosts: all
+  become: true 
+  tasks: 
+
+  - name: Configure etc/issue at dev 
+    template:
+      scr: motd.j2
+      dest: /etc/motd
+      owner: root
+      group: root
+      mode: 0644
+
+- teste
+
+ansible all -a 'cat /etc/motd'
+
+##########################################################################################
+# TASK 5 - Criação arquivo vault
+##########################################################################################
+# - cria arquivo secret 
+# - cria arquivo com a senha 
+ 
+ansible-vault create secret.yml
+- pass : redpass
+- pass : redpass
+
+user_password: redhat 
+
+
+echo redpass > passwd 
+
+
+##########################################################################################
+# TASK 6 - Criação de um role do zero 
+##########################################################################################
+# - instala httpd,firewalld, configura, habilita, com notify
+# 
+
+TIVE PROBLEMAS COM AS ASPAS ANTES DOS COLCHETES 
+
+content: "Welcome to server {{ ansible_fqdn }}"
+
+name: "{{ item }}"
+
+
+---
+# tasks/main.yml
+
+- name: Install packages 
+  yum:
+    name:
+      - httpd
+      - firewalld
+    state: present
+
+- name: Start Services
+  service:
+    name: "{{ item }}"
+    state: started
+    enabled: true 
+  loop:
+    - httpd
+    - firewalld 
+
+- name: Configure firewalld 
+  firewalld:
+    service: http
+    state: enabled
+    immediate: true
+    permanent: true
+  notify: restart firewalld 
+
+- name: Create content
+  copy: 
+    dest: /var/www/html/index.html
+    content: "Welcome to server {{ ansible_fqdn }}"
+  notify: restart httpd
+
+
+---
+# handlers/main.yml
+
+- name: restart firewalld
+  service:
+    name: firewalld
+    state: restarted
+
+- name: restart httpd
+  service:
+    name: httpd
+    state: restarted
+
+
+---
+# playbook.yml
+- name: Config web servers 
+  hosts: web
+  become: true 
+  roles:
+    - webserver 
+
+
+
+##########################################################################################
+# TASK 7 - Criação /etc/hosts com template , todos hosts do inventário , mas só copia pra um deles
+
+##########################################################################################
+#   ip fqdn hostname 
+
+
+ - A GRANDE PEGADINHA AQUI É QUE O host NO ARQUIVO JINJA NA PODE TER A ASPAS SIMPLES E AS DEMAIS VARIÁVEIS SIM
+ - como colocar as informações que irão aparecer ? RESPOSTA: SÓ COLOCAR NORMAL
+
+$ cat hosts.j2
+
+{% for host in groups[all] %}
+{{ hostvars[host]['ansible_default_ipv4']['address']}} {{ hostvars[host]['ansible_fqdn'] }} {{ hostvars[host]['ansible_hostname'] }}
+{% endfor %}
+
+$ cat hosts.yml
+
+--- 
+- name: Gera arquivo hosts 
+  hosts: all 
+  gather_facts: true 
   tasks:
 
-    - name: Add IP address of all hosts to all hosts
-      lineinfile: 
-        dest: /home/student/rhce/files/etc/hosts
-        line: '{{ hostvars[item]["ansible_host"] }} {{ hostvars[item]["ansible_hostname"] }} {{ hostvars[item]["ansible_nodename"] }}'
-        state: present
-      with_items: groups['all']
-
-    - name: Copy files to host
-      copy:
-        src: /home/student/rhce/files/etc/hosts
-        dest: /etc/hosts
+    - name: Gera template hosts 
+      template:
+        src: hosts2.j2 
+        dest: /etc/hosts2
         mode: 0644
-        owner: root
-        group: root
-
-      when: inventory_hostname in groups['small_group']
-
+        owner: root 
+        group: root 
+      when: inventory_hostname in groups['dev']
 
 
 
+##########################################################################################
+# TASK 8 - Configurar um requirements na pasta roles e instalar mudando o nome 
+##########################################################################################
+# roles: 
+# - haproxy
+# - phpinfo -
 
-8 - Configurar um requirements na pasta roles e instalar mudando o nome 
+[user@host project]$ cat roles/requirements.yml
+# from Ansible Galaxy, using the latest version
+- src: geerlingguy.redis
 
-    roles: 
-    - haproxy
-    - phpinfo -
+# from Ansible Galaxy, overriding the name and using a specific version
+- src: geerlingguy.redis
+  version: "1.5.0"
+  name: redis_prod
 
-9 - Configurar um playbook para usar as roles de haproxy e phpinfo 
-   
-   dava erro na interface eth0 não tinha uma propriedade blablabla 
+# from any Git-based repository, using HTTPS
+- src: https://gitlab.com/guardianproject-ops/ansible-nginx-acme.git
+  scm: git
+  version: 56e00a54
+  name: nginx-acme
 
-   instala o haproxy no node [balancers] curl deve retornar cada hora um ip 
+# from any Git-based repository, using SSH
+- src: git@gitlab.com:guardianproject-ops/ansible-nginx-acme.git
+  scm: git
+  version: master
+  name: nginx-acme-ssh
 
+# from a role tar ball, given a URL;
+#   supports 'http', 'https', or 'file' protocols
+- src: file:///opt/local/roles/myrole.tar
+  name: myrole
 
-10 - Instalar rhel-system-roles e utilizar a de timesync 
-
-   - deve mudar os server (IP)
-   - manter o provider 
-   - com iburst 
-
-11 - Playbook para criar lv 
-
-    - dá o nome do vg 
-    - se não existir o vg msg : O vg não existe 
-    - Se não tiver espaço suficiente : Não tem espaço suficiente 
-    - Então cria com espaço XX
-
-12 - Reencrypt
-
-    - reencriptar o secret criado 
-
-13 - Playbook que pega um arquivo com lista de usuários 
-
-    - case X instala no grupo dev 
-    - case Y instala no grupo prod 
-    - utilizar arquivo vault 
-    - utiliza arquivo vars
-    - utiliza arquivo senha . Como colocar no play ?
+##########################################################################################
+# TASK - 9 - Configurar um playbook para usar as roles de haproxy e phpinfo 
+##########################################################################################
+# - dava erro na interface eth0 não tinha uma propriedade blablabla 
+# - instala o haproxy no node [balancers] curl deve retornar cada hora um ip 
 
 
-14 - Criar o /devweb 
 
-      - link com /var/www/html/devweb 
-      - permissão tipo rwx com set UID 
-      - dependendo do usuário vai retornar um valor 
-      - tava dando erro de permissão 
+
+##########################################################################################
+# TASK 10 - Instalar rhel-system-roles e utilizar a de timesync 
+##########################################################################################
+#  - deve mudar os server (IP)
+#  - manter o provider 
+#  - com iburst 
+
+$ firewall-cmd --permanent --add-service=ntp
+$ systemctl restart firewalld.service
+$ systemctl start ntpd
+$ systemctl enable ntpd
+$ ss -atun | grep 123
+$ timedatectl set-ntp true
+$ ntpq -p
+$ ntpstat
+
+timedatectl 
+timedatectl set-ntp true
+chkconfig --list ntpd
+chronyc sources -v 
+
+
+
+##########################################################################################
+# TASK 11 - Playbook para criar lv 
+##########################################################################################
+# - dá o nome do vg 
+# - se não existir o vg msg : O vg não existe 
+# - Se não tiver espaço suficiente : Não tem espaço suficiente 
+# - Então cria com espaço XX
+
+
+
+##########################################################################################
+# TASK 12 - Reencrypt
+##########################################################################################
+# - reencriptar o secret criado 
+
+
+
+
+##########################################################################################
+# TASK 13 - Playbook que pega um arquivo com lista de usuários 
+##########################################################################################
+# - case X instala no grupo dev 
+# - case Y instala no grupo prod 
+# - utilizar arquivo vault 
+# - utiliza arquivo vars
+# - utiliza arquivo senha . Como colocar no play ?
+
+
+
+
+##########################################################################################
+# TASK 14 - Criar o /devweb 
+##########################################################################################
+      # - link com /var/www/html/devweb 
+      # - permissão tipo rwx com set UID 
+      # - dependendo do usuário vai retornar um valor 
+      # - tava dando erro de permissão 
+
+
+
+
+##########################################################################################
+# TASK 1 : Ansible Installation and Configuration
+##########################################################################################
+# Install ansible package on the control node (including any dependencies) and configure the following:
+
+#     Create a regular user automation with the password of devops. Use this user for all sample exam tasks and playbooks, unless you are working on the task #2 that requires creating the automation user on inventory hosts. You have root access to all five servers.
+#     All playbooks and other Ansible configuration that you create for this sample exam should be stored in /home/automation/plays.
+
+# Create a configuration file /home/automation/plays/ansible.cfg to meet the following requirements:
+
+#     The roles path should include /home/automation/plays/roles, as well as any other path that may be required for the course of the sample exam.
+#     The inventory file path is /home/automation/plays/inventory.
+#     Privilege escallation is disabled by default.
+#     Ansible should be able to manage 10 hosts at a single time.
+#     Ansible should connect to all managed nodes using the automation user.
+
+# Create an inventory file /home/automation/plays/inventory with the following:
+
+#     ansible2.hl.local is a member of the proxy host group.
+#     ansible3.hl.local is a member of the webservers host group.
+#     ansible4.hl.local is a member of the webservers host group.
+#     ansible5.hl.local is a member of the database host group.
+
+
+
+##########################################################################################
+TASK 2: Ad-Hoc Commands
+##########################################################################################
+# Generate an SSH keypair on the control node. You can perform this step manually.
+
+# Write a script /home/automation/plays/adhoc that uses Ansible ad-hoc commands to achieve the following:
+
+#     User automation is created on all inventory hosts (not the control node).
+#     SSH key (that you generated) is copied to all inventory hosts for the automation user and stored in /home/automation/.ssh/authorized_keys.
+#     The automation user is allowed to elevate privileges on all inventory hosts without having to provide a password.
+
+# After running the adhoc script on the control node as the automation user, you should be able to SSH into all inventory hosts using the automation user without password, as well as a run all privileged commands.
+
+
+
+##########################################################################################
+TASK 3: File Content
+##########################################################################################
+# Create a playbook /home/automation/plays/motd.yml that runs on all inventory hosts and does the following:
+
+#     The playbook should replace any existing content of /etc/motd with text. Text depends on the host group.
+#     On hosts in the proxy host group the line should be “Welcome to HAProxy server”.
+#     On hosts in the webservers host group the line should be “Welcome to Apache server”.
+#     On hosts in the database host group the line should be “Welcome to MySQL server”.
+
+
+##########################################################################################
+TASK 4: Configure SSH Server
+##########################################################################################
+# Create a playbook /home/automation/plays/sshd.yml that runs on all inventory hosts and configures SSHD daemon as follows:
+
+#     banner is set to /etc/motd
+#     X11Forwarding is disabled
+#     MaxAuthTries is set to 3
+
+
+
+
+
+
+##########################################################################################
+# TASK 5: Ansible Vault
+##########################################################################################
+# Create Ansible vault file /home/automation/plays/secret.yml. Encryption/decryption password is devops.
+# Add the following variables to the vault:
+#     user_password with value of devops
+#     database_password with value of devops
+# Store Ansible vault password in the file /home/automation/plays/vault_key.
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 6: Users and Groups
+##########################################################################################
+# You have been provided with the list of users below.
+# Use /home/automation/plays/vars/user_list.yml file to save this content.
+
+---
+users:
+  - username: alice
+    uid: 1201
+  - username: vincent
+    uid: 1202
+  - username: sandy
+    uid: 2201
+  - username: patrick
+    uid: 2202
+
+# Create a playbook /home/automation/plays/users.yml that uses the vault file /home/automation/plays/secret.yml to achieve the following:
+#     Users whose user ID starts with 1 should be created on servers in the webservers host group. User password should be used from the user_password variable.
+#     Users whose user ID starts with 2 should be created on servers in the database host group. User password should be used from the user_password variable.
+#     All users should be members of a supplementary group wheel.
+#     Shell should be set to /bin/bash for all users.
+#     Account passwords should use the SHA512 hash format.
+#     Each user should have an SSH key uploaded (use the SSH key that you created previously, see task #2).
+# After running the playbook, users should be able to SSH into their respective servers without passwords.
+
+
+
+
+
+
+##########################################################################################
+TASK 7: Scheduled Tasks
+##########################################################################################
+# Create a playbook /home/automation/plays/regular_tasks.yml that runs on servers in the proxy host group and does the following:
+
+#     A root crontab record is created that runs every hour.
+#     The cron job appends the file /var/log/time.log with the output from the date command.
+
+
+
+
+
+
+##########################################################################################
+TASK 8: Software Repositories
+##########################################################################################
+# Create a playbook /home/automation/plays/repository.yml that runs on servers in the database host group and does the following:
+
+#     A YUM repository file is created.
+#     The name of the repository is mysql80-community.
+#     The description of the repository is “MySQL 8.0 YUM Repo”.
+#     Repository baseurl is http://repo.mysql.com/yum/mysql-8.0-community/el/8/x86_64/.
+#     Repository GPG key is at http://repo.mysql.com/RPM-GPG-KEY-mysql.
+#     Repository GPG check is enabled.
+#     Repository is enabled.
+
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 9: Create and Work with Roles
+##########################################################################################
+# Create a role called sample-mysql and store it in /home/automation/plays/roles. The role should satisfy the following requirements:
+
+#     A primary partition number 1 of size 800MB on device /dev/sdb is created.
+#     An LVM volume group called vg_database is created that uses the primary partition created above.
+#     An LVM logical volume called lv_mysql is created of size 512MB in the volume group vg_database.
+#     An XFS filesystem on the logical volume lv_mysql is created.
+#     Logical volume lv_mysql is permanently mounted on /mnt/mysql_backups.
+#     mysql-community-server package is installed.
+#     Firewall is configured to allow all incoming traffic on MySQL port TCP 3306.
+#     MySQL root user password should be set from the variable database_password (see task #5).
+#     MySQL server should be started and enabled on boot.
+#     MySQL server configuration file is generated from the my.cnf.j2 Jinja2 template with the following content:
+
+[mysqld]
+bind_address = {{ ansible_default_ipv4.address }}
+skip_name_resolve
+datadir=/var/lib/mysql
+socket=/var/lib/mysql/mysql.sock
+
+symbolic-links=0
+sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES 
+
+[mysqld_safe]
+log-error=/var/log/mysqld.log
+pid-file=/var/run/mysqld/mysqld.pid
+
+# Create a playbook /home/automation/plays/mysql.yml that uses the role and runs on hosts in the database host group.
+
+
+##########################################################################################
+# TASK 10: Create and Work with Roles (Some More)
+##########################################################################################
+# Create a role called sample-apache and store it in /home/automation/plays/roles. The role should satisfy the following requirements:
+
+#     The httpd, mod_ssl and php packages are installed. Apache service is running and enabled on boot.
+#     Firewall is configured to allow all incoming traffic on HTTP port TCP 80 and HTTPS port TCP 443.
+#     Apache service should be restarted every time the file /var/www/html/index.html is modified.
+#     A Jinja2 template file index.html.j2 is used to create the file /var/www/html/index.html with the following content:
+
+# The address of the server is: IPV4ADDRESS
+
+# IPV4ADDRESS is the IP address of the managed node.
+
+# Create a playbook /home/automation/plays/apache.yml that uses the role and runs on hosts in the webservers host group.
+
+
+
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 11: Download Roles From Ansible Galaxy and Use Them
+##########################################################################################
+# Use Ansible Galaxy to download and install geerlingguy.haproxy role in /home/automation/plays/roles.
+
+# Create a playbook /home/automation/plays/haproxy.yml that runs on servers in the proxy host group and does the following:
+
+#     Use geerlingguy.haproxy role to load balance request between hosts in the webservers host group.
+#     Use roundrobin load balancing method.
+#     HAProxy backend servers should be configured for HTTP only (port 80).
+#     Firewall is configured to allow all incoming traffic on port TCP 80.
+
+# If your playbook works, then doing “curl http://ansible2.hl.local/” should return output from the web server (see task #10). Running the command again should return output from the other web server.
+
+
+
+
+
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 12: Security
+##########################################################################################
+# Create a playbook /home/automation/plays/selinux.yml that runs on hosts in the webservers host group and does the following:
+#     Uses the selinux RHEL system role.
+#     Enables httpd_can_network_connect SELinux boolean.
+#     The change must survive system reboot.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 13: Use Conditionals to Control Play Execution
+##########################################################################################
+# Create a playbook /home/automation/plays/sysctl.yml that runs on all inventory hosts and does the following:
+
+#     If a server has more than 2048MB of RAM, then parameter vm.swappiness is set to 10.
+#     If a server has less than 2048MB of RAM, then the following error message is displayed:
+
+# Server memory less than 2048MB
+
+
+
+
+
+
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 14: Use Archiving
+##########################################################################################
+# Create a playbook /home/automation/plays/archive.yml that runs on hosts in the database host group and does the following:
+
+#     A file /mnt/mysql_backups/database_list.txt is created that contains the following line: dev,test,qa,prod.
+#     A gzip archive of the file /mnt/mysql_backups/database_list.txt is created and stored in /mnt/mysql_backups/archive.gz.
+
+
+
+
+
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 15: Work with Ansible Facts
+##########################################################################################
+# Create a playbook /home/automation/plays/facts.yml that runs on hosts in the database host group and does the following:
+#     A custom Ansible fact server_role=mysql is created that can be retrieved from ansible_local.custom.sample_exam when using Ansible setup module.
+
+
+
+
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 16: Software Packages
+##########################################################################################
+# Create a playbook /home/automation/plays/packages.yml that runs on all inventory hosts and does the following:
+#     Installs tcpdump and mailx packages on hosts in the proxy host groups.
+#     Installs lsof and mailx packages on hosts in the database host groups.
+
+
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 17: Services
+##########################################################################################
+# Create a playbook /home/automation/plays/target.yml that runs on hosts in the webservers host group and does the following:
+#     Sets the default boot target to multi-user.
+
+
+
+
+
+
+
+##########################################################################################
+# TASK 18. Create and Use Templates to Create Customised Configuration Files
+##########################################################################################
+# Create a playbook /home/automation/plays/server_list.yml that does the following:
+
+#     Playbook uses a Jinja2 template server_list.j2 to create a file /etc/server_list.txt on hosts in the database host group.
+#     The file /etc/server_list.txt is owned by the automation user.
+#     File permissions are set to 0600.
+#     SELinux file label should be set to net_conf_t.
+#     The content of the file is a list of FQDNs of all inventory hosts.
+
+# After running the playbook, the content of the file /etc/server_list.txt should be the following:
+
+# ansible2.hl.local
+# ansible3.hl.local
+# ansible4.hl.local
+# ansible5.hl.local
+
+# Note: if the FQDN of any inventory host changes, re-running the playbook should update the file with the new values.
+
+
+
+
+
+
+
+
+
+
+
+
+
+

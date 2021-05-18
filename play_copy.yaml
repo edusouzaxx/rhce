@@ -1,0 +1,17 @@
+--- 
+- name: Configure /etc/issue 
+  hosts: all
+  become: true 
+  tasks: 
+
+  - name: Configure etc/issue at dev 
+    copy:
+      dest: /etc/issue 
+      content: Development
+    when: inventory_hostname in groups['dev']
+  - name: Configure etc/issue at dev 
+    copy:
+      dest: /etc/issue 
+      content: Development
+    when: inventory_hostname in groups['dev']
+
