@@ -4,6 +4,11 @@ AnsibleUndefinedVariable: ansible.vars.hostvars.Hostvars object has no element
 
 - Trabalhar com hostvars
 
+- Colocar variáveis no inventário
+
+- QUESTÃO DE FORKS E SERIAL 
+
+
 ##########################################################################################
 # TASK
 ##########################################################################################
@@ -318,67 +323,84 @@ ansible all -a 'chronyc sources -v'
 # - Se não tiver espaço suficiente : Não tem espaço suficiente 
 # - Então cria com espaço XX
 
-
-vgcreate myvg /dev/vdb1
-A volume group called myvg already exists.
-
-
-pvcreate -n mylv -L 10G myvg
-
-Volume group "myvg" has insufficient free space (1279 extents): 
-
-
- databin
-
 Create a logical volume with specific size, if the volume group doesn't have enough size output a message and use another size. ( LV name = dbdata and size 2.5G if VG databin have sufficient size or fall back to 1G )
 
 If volume group doesn't exist exit with output message ( if VG databin not there, we skip )
 
 If logical volume created format and mount to disk ( if dbdata LV created, format with ext4 and mount to /db )
 
---sample Playbook using Block and Fail ( error handling )--
+
+DICA!!! :
+
+ansible dev -m setup -a 'filter=ansible_lvm'
+
+ansible dev -m setup -a 'filter=ansible_'
+
+ansible dev -a 'vgs'
+
+ansible dev -a 'vgdisplay databin'
+
+ansible dev -a 'vgdisplay /dev/myvg/dbdata'
+
+
+
 
 ---
- - name: Setup LVM
-   hosts: all
-   tasks:
-     - name: Check for databin VG
-       fail:
-         msg: VG databin does not exist
-       when:
-         - ansible_lvm['vgs']['databin'] is not defined
+- name: Setup LVM
+  hosts: all
+  tasks:
 
-     - name: Create LVM and Filesystem and Mount
-       block:
-         - name: Check for databin VG Size of 2500MiB
-           fail:
-             msg: Could not create LV with 2500MiB size
-           when:
-             - ansible_lvm['vgs']['databin']['size_g'] < "2.50"
-         - name: Create 2500MiB LVM on databin VG
-           lvol:
-              lv: dbdata
-              vg: databin
-              size: "2532"
-       rescue:
-         - name: Fall back and Create 1024MiB LVM on databin VG
-           lvol:
-             size: "1024"
-             vg: databin
-             lv: dbdata
-       always:
-         - name: Set Filesystem
-           filesystem:
-             dev: /dev/databin/dbdata
-             fstype: ext4
-         - name: Mount LV 
-           mount:
-             path: /db
-             src: /dev/databin/dbdata
-             fstype: ext4
-             state: present
-Share Improve this answer Follow
+    - name: Check for databin VG
+      fail:
+        msg: VG databin does not exist
+      when:
+        - ansible_lvm['vgs']['databin'] is not defined
 
+    - name: Create LVM and Filesystem and Mount
+      block:
+
+        - name: Check for databin VG Size of 2500MiB
+          fail:
+            msg: Could not create LV with 2500MiB size
+          when:
+            - ansible_lvm['vgs']['databin']['size_g'] < "2.50"
+      
+        - name: Create 2500MiB LVM on databin VG
+          lvol:
+            lv: dbdata
+            vg: databin
+            size: "2532"
+      
+      rescue:
+      
+        - name: Fall back and Create 1024MiB LVM on databin VG
+          lvol:
+            size: "1024"
+            vg: databin
+            lv: dbdata
+      
+      always:
+      
+        - name: Set Filesystem
+          filesystem:
+            dev: /dev/databin/dbdata
+            fstype: ext4
+
+        - name: Mount LV 
+          mount:
+            path: /db
+            src: /dev/databin/dbdata
+            fstype: ext4
+            state: mounted
+
+
+IMPORTANTE!!! :
+
+is not defined 
+
+ansible_lvm['vgs']['databin']['size_g'] < "2.50"
+
+JÁ MONTA SE mounted OU SÓ COLOCA NA FSTAB present 
 
 
 ##########################################################################################
