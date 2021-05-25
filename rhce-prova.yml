@@ -31,6 +31,36 @@ p - cplar
 # TASK 2 - Instalação ansible e Configuração Inventário (dev,test,prod,balancers)
 ##########################################################################################
 
+# ansible.cfg
+
+[defaults]
+inventory = inventory
+remote_user = devops
+
+[privilege_escalation]
+become = true
+become_user = root
+become_method = sudo
+become_ask_pass = false
+
+# inventory
+
+[dev]
+servera
+
+[test]
+serverb
+
+[prod]
+serverc
+
+[balancer]
+serverd
+
+[web:children]
+dev
+test
+
 
 
 ##########################################################################################
@@ -81,6 +111,10 @@ ansible all -m yum_repository -a "name=elasticsearch-7.x \
       content: "Production Environment"
     when: inventory_hostname in groups['prod']
 
+
+# teste
+
+ansible dev,test,prod -a 'cat /etc/issue'
 
 ##########################################################################################
 # TASK 4 - Play motd "You are at server FQDN with ip IPV4
@@ -241,6 +275,8 @@ $ cat hosts.yml
 # - phpinfo -
 
 [user@host project]$ cat roles/requirements.yml
+
+
 # from Ansible Galaxy, using the latest version
 - src: geerlingguy.redis
 
@@ -266,13 +302,29 @@ $ cat hosts.yml
 - src: file:///opt/local/roles/myrole.tar
   name: myrole
 
+
+
+
+
+
+# from Ansible Galaxy, overriding the name and using a specific version
+- src: geerlingguy.haproxy
+  name: load_balancer 
+
+
+
+ansible-galaxy install -r roles/requirements.yml -p roles 
+
+
 ##########################################################################################
 # TASK - 9 - Configurar um playbook para usar as roles de haproxy e phpinfo 
 ##########################################################################################
 # - dava erro na interface eth0 não tinha uma propriedade blablabla 
 # - instala o haproxy no node [balancers] curl deve retornar cada hora um ip 
 
+ansible-galaxy search 'redis' --platforms EL
 
+ansible-galaxy install geerlingguy.haproxy --ignore-certs --platforms EL
 
 
 ##########################################################################################
@@ -297,21 +349,16 @@ ansible all -a 'chronyc sources -v'
   hosts: servers
   vars:
     timesync_ntp_servers:
-      - hostname: 0.rhel.pool.ntp.org
+      - hostname: 172.25.254.254
         iburst: yes
-      - hostname: 1.rhel.pool.ntp.org
-        iburst: yes
-      - hostname: 2.rhel.pool.ntp.org
-        iburst: yes
-    timezone: UTC
 
   roles:
     - rhel-system-roles.timesync
 
-  tasks:
-    - name: Set timezone
-      timezone:
-        name: "{{ timezone }}"
+
+ansible all -a 'timedatectl' 
+
+ansible all -a 'chronyc sources -v' 
 
 
 ##########################################################################################
