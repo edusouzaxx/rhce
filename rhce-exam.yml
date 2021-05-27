@@ -381,7 +381,12 @@ Create a playbook /home/automation/plays/mysql.yml that uses the role and runs o
 
 # Solução ---------------------------------------------
 
+[student@workstation role-galaxy]$ ansible-galaxy install -r roles/requirements.yml --force -p roles
+
+--force  -> força a criação se já existe em outra versão por exemplo 
+
 cd /home/automation/plays/roles
+
 ansible-galaxy init sample-mysql 
 
 vim tasks/main.yml 
@@ -408,7 +413,6 @@ vim tasks/main.yml
 
 - name: Mount filesystem
   mount:
-    boot: true
     fstype: xfs
     state: mounted
     opts: noatime
@@ -553,26 +557,33 @@ Create a playbook /home/automation/plays/selinux.yml that runs on hosts in the w
   vars: 
     selinux_booleans:
       - {name: 'httpd_can_network_connect', state: 'on', persistent: 'yes'}
+  
+    selinux_booleans:
+      - name: 'httpd_enable_homedirs'
+        state: 'on'
+        persistent: 'yes'
+
   tasks:
-    - name: Check SELinux configuration
+
+    - name: Apply SELinux role
+
       block:
+    
         - include_role:
             name: rhel-system-roles.selinux
+    
       rescue:
-        # Fail if failed for a different reason than selinux_reboot_required.
-        - name: Check for general failure
+    
+        - name: Check for failure for other reasons than required reboot
           fail:
-            msg: "SELinux role failed."
           when: not selinux_reboot_required
 
         - name: Restart managed host
           reboot:
-            msg: "Ansible rebooting system for updates."
 
         - name: Reapply SELinux role to complete changes
           include_role:
             name: rhel-system-roles.selinux
-
 
 
 # #####################################################

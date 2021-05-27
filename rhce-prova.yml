@@ -381,8 +381,6 @@ DICA!!! :
 
 ansible dev -m setup -a 'filter=ansible_lvm'
 
-ansible dev -m setup -a 'filter=ansible_'
-
 ansible dev -a 'vgs'
 
 ansible dev -a 'vgdisplay databin'
@@ -471,12 +469,26 @@ JÁ MONTA SE mounted OU SÓ COLOCA NA FSTAB present
 
 
 ##########################################################################################
-# TASK 14 - Criar o /devweb 
+# TASK 14 - Criar o /data
 ##########################################################################################
       # - link com /var/www/html/devweb 
       # - permissão tipo rwx com set UID 
       # - dependendo do usuário vai retornar um valor 
       # - tava dando erro de permissão 
+
+
+---
+- name: Create link /data for webserver 
+  hosts: dev
+  become: true
+  tasks:
+
+    - name: Create link 
+      file:
+        src: /data
+        dest: /var/www/html/data
+        state: link
+        mode: u=rwx,g=rx,o=---,g+s
 
 
 
@@ -521,6 +533,20 @@ TASK 2: Ad-Hoc Commands
 
 
 
+
+chmod +x /home/automation/plays/adhoc
+
+cat /home/automation/plays/adhoc
+
+#!/bin/bash
+
+ansible all -u root -m user -a 'name=automation shell=/bin/bash'
+ansible all -u root -m authorized_key -a "user='automation' state='present' key='{{ lookup('file','/home/automation/.ssh/id_rsa.pub')}}'"
+ansible all -u root -m copy -a "dest=/etc/sudoers.d/automation content='automation ALL = (ALL) NOPASSWD: ALL'"
+
+
+
+
 ##########################################################################################
 TASK 3: File Content
 ##########################################################################################
@@ -532,6 +558,29 @@ TASK 3: File Content
 #     On hosts in the database host group the line should be “Welcome to MySQL server”.
 
 
+---
+- name: File /etc/motd Content 
+  hosts: localhost
+  tasks:
+    - name: Config motd
+      copy: 
+        content: "Welcome to HAProxy server"
+        dest: /etc/motd
+      when: inventory_hostname in groups['proxy']
+
+    - name: Config motd
+      copy: 
+        content: "Welcome to Apache server"
+        dest: /etc/motd
+      when: inventory_hostname in groups['webservers']
+
+    - name: Config motd
+      copy: 
+        content: "Welcome to MySQL server"
+        dest: /etc/motd
+      when: inventory_hostname in groups['database']
+
+
 ##########################################################################################
 TASK 4: Configure SSH Server
 ##########################################################################################
@@ -541,13 +590,41 @@ TASK 4: Configure SSH Server
 #     X11Forwarding is disabled
 #     MaxAuthTries is set to 3
 
+---
+- name: Configure sshd
+  hosts: all
+  tasks: 
 
+    - name: Configure sshd banner 
+      lineinfile:
+        line: "Banner /etc/motd"
+        regexp: "^#Banner"
+        dest: /etc/ssh/sshd_config
+      notify: restart sshd 
 
+    - name: Configure sshd banner 
+      lineinfile:
+        line: "X11Forwarding no"
+        regexp: "^X11Forwarding"
+        dest: /etc/ssh/sshd_config
+      notify: restart sshd 
 
+    - name: Configure sshd banner 
+      lineinfile:
+        line: "MaxAuthTries 3"
+        regexp: "^#MaxAuthTries"
+        dest: /etc/ssh/sshd_config
+      notify: restart sshd 
 
+  handlers:
+
+    - name: restart sshd 
+      service:
+        name: sshd
+        state: restarted
 
 ##########################################################################################
-# TASK 5: Ansible Vault
+  # TASK 5: Ansible Vault
 ##########################################################################################
 # Create Ansible vault file /home/automation/plays/secret.yml. Encryption/decryption password is devops.
 # Add the following variables to the vault:
@@ -556,9 +633,29 @@ TASK 4: Configure SSH Server
 # Store Ansible vault password in the file /home/automation/plays/vault_key.
 
 
+[defaults]
+  vault_password_file = ~/.vault_pass
 
 
+Create Ansible vault file /home/automation/plays/secret.yml. Encryption/decryption password is devops.
 
+Add the following variables to the vault:
+
+    user_password with value of devops
+    database_password with value of devops
+
+Store Ansible vault password in the file /home/automation/plays/vault_key.
+
+# Solução ---------------------------------------------
+
+ansible-vault create secret.yml
+New Vault password: 
+Confirm New Vault password: 
+
+user_password: devops
+database_password: devops
+
+echo "devops" > /home/automation/plays/vault_key
 
 
 ##########################################################################################
@@ -587,9 +684,33 @@ users:
 #     Each user should have an SSH key uploaded (use the SSH key that you created previously, see task #2).
 # After running the playbook, users should be able to SSH into their respective servers without passwords.
 
+--- 
+- name: Configure users 
+  hosts: all
+  vars_files: 
+    - /home/automation/plays/secret.yml
+    - /home/automation/plays/vars/user_list.yml
+  tasks:
 
+    - name: Create users whose ID starts with 1
+      user:
+        name: "{{ item.username }}"
+        groups: wheel
+        password: "{{ user_password | password_hash('sha512') }}"
+        shell: /bin/bash 
+        ssh_key_file: /home/devops/.ssh/id_rsa
+      loop: "{{ users  }}"
+      when: inventory_hostname in groups['webservers'] and (item.uid | string)[0] | int == 1
 
-
+    - name: Create users whose ID starts with 1
+      user:
+        name: "{{ item.username }}"
+        groups: wheel
+        password: "{{ user_password | password_hash('sha512') }}"
+        shell: /bin/bash 
+        ssh_key_file: /home/devops/.ssh/id_rsa
+      loop: "{{ users  }}"
+      when: inventory_hostname in groups['database'] and (item.uid | string)[0] | int == 2
 
 
 ##########################################################################################
@@ -600,9 +721,17 @@ TASK 7: Scheduled Tasks
 #     A root crontab record is created that runs every hour.
 #     The cron job appends the file /var/log/time.log with the output from the date command.
 
+---
+- name: Crontab for root 
+  hosts: proxy
+  tasks:
 
-
-
+    - name: Create crontab 
+      cron:
+        user: root 
+        name: Append date 
+        minute: 0
+        job: date >> /var/log/time.log 
 
 
 ##########################################################################################
@@ -619,11 +748,20 @@ TASK 8: Software Repositories
 #     Repository is enabled.
 
 
+---
+- name: Configure repository 
+  hosts: database
+  tasks:
 
-
-
-
-
+    - name: Create mysql repository
+      yum_repository:
+        baseurl: http://repo.mysql.com/yum/mysql-8.0-community/el/8/x86_64/
+        gpgkey: http://repo.mysql.com/RPM-GPG-KEY-mysql
+        gpgcheck: true
+        enabled: true
+        name: mysql80-community
+        description: MySQL 8.0 YUM Repo
+        file: mysql80-community
 
 ##########################################################################################
 # TASK 9: Create and Work with Roles
@@ -656,6 +794,85 @@ pid-file=/var/run/mysqld/mysqld.pid
 
 # Create a playbook /home/automation/plays/mysql.yml that uses the role and runs on hosts in the database host group.
 
+---
+- name: Create a partition
+  command: parted --script mklabel gpt mkpart primary 1Mib 800MB 
+
+- name: Create vg_database 
+  lvg:
+    vg: vg_database
+    pvs: /dev/vdb1
+
+- name: Create lg 
+  lvol:
+    vg: vg_database
+    lv: lv_mysql
+    size: 512m
+
+- name: Create filesystem
+  filesystem:
+    dev: /dev/vg_database/lv_mysql
+    fstype: xfs
+
+- name: Mount filesystem
+  mount:
+    fstype: xfs
+    state: mounted
+    opts: noatime
+    path: /mnt/mysql_backups
+    src: /dev/vg_database/lv_mysql
+
+- name: Install mysql package
+  yum:
+    name: mysql-community-server
+    state: present
+
+- name: Install firewalld
+  yum:
+    name: firewalld
+    state: present
+
+- name: Start firewalld
+  service:
+    name: firewalld
+    state: started
+    enabled: true
+
+- name: Enable ports on firewalld 
+  firewalld:
+    ports: 3306/tcp
+    state: enabled
+    immediate: true
+    permanent: true 
+
+- name: Change mysql root passwd
+  mysql_user:
+    name: root
+    password: "{{ database_password }}"
+
+- name: Start mysqld  
+  service:
+    name: mysqld
+    state: started
+    enabled: true
+
+- name: Template a file to /etc/files.conf
+  template:
+    src: my.cnf.j2
+    dest: /etc/mysql/my.cnf
+    owner: root
+    group: root
+    mode: 0644
+  notify: restart mysqld
+
+---
+- name: Play 
+  hosts: database
+  vars_files:
+    - secret.yml
+  roles:
+    - sample-mysql
+
 
 ##########################################################################################
 # TASK 10: Create and Work with Roles (Some More)
@@ -667,18 +884,43 @@ pid-file=/var/run/mysqld/mysqld.pid
 #     Apache service should be restarted every time the file /var/www/html/index.html is modified.
 #     A Jinja2 template file index.html.j2 is used to create the file /var/www/html/index.html with the following content:
 
-# The address of the server is: IPV4ADDRESS
+The address of the server is: IPV4ADDRESS
 
-# IPV4ADDRESS is the IP address of the managed node.
-
+#IPV4ADDRESS is the IP address of the managed node.
 # Create a playbook /home/automation/plays/apache.yml that uses the role and runs on hosts in the webservers host group.
 
 
+- name: Install packages
+  yum:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - httpd
+    - mod_ssl
+    - php
 
+- name: firewalld configuration
+  firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    immediate: yes
+    state: enabled
+  notify: reload firewalld
+  loop:
+    - https
+    - http
 
+- name: Start httpd
+  service:
+    name: httpd
+    state: started
+    enabled: true
 
-
-
+- name: Template index.html
+  template:
+    src: index.html.j2
+    dest: /var/www/html/index.html
+  notify: restart httpd 
 
 
 
@@ -697,14 +939,51 @@ pid-file=/var/run/mysqld/mysqld.pid
 # If your playbook works, then doing “curl http://ansible2.hl.local/” should return output from the web server (see task #10). Running the command again should return output from the other web server.
 
 
+# requirements.yml
+
+ - src: https://example.com/rgeerlingguy.haproxy-1.0.1.tar.gz
+   name: load-balancer
+
+# comando instalação role
+
+ansible-galaxy install -r requirements.yml -p roles/
 
 
+# play.yml
 
+---
+- name: Configure load-balancer
+  hosts: proxy
+  vars:
+    haproxy_backend_servers:
+      - name: app1
+        address: 192.168.0.1:80
+      - name: app2
+        address: 192.168.0.2:80
+    haproxy_backend_balance_method: 'roundrobin'
 
+  roles:
+    - load-balancer
 
+  tasks: 
 
+    - name: Install firewalld
+      yum:
+        name: firewalld
+        state: present
+    
+    - name: Start Firewalld
+      service:
+        name: firewalld
+        state: started
+        enabled: true
 
-
+    - name: Allow incoming traffic
+      firewalld:
+        port: 80/tcp
+        state: enabled
+        immediate: true
+        permanent: true
 
 
 ##########################################################################################
@@ -715,17 +994,41 @@ pid-file=/var/run/mysqld/mysqld.pid
 #     Enables httpd_can_network_connect SELinux boolean.
 #     The change must survive system reboot.
 
+[root@host ~]# yum install rhel-system-roles
 
+---
+- name: Configure Dev Web Server
+  hosts: webservers
+  vars: 
+    selinux_booleans:
+      - {name: 'httpd_can_network_connect', state: 'on', persistent: 'yes'}
+  
+    selinux_booleans:
+      - name: 'httpd_enable_homedirs'
+        state: 'on'
+        persistent: 'yes'
 
+  tasks:
 
+    - name: Apply SELinux role
 
+      block:
+    
+        - include_role:
+            name: rhel-system-roles.selinux
+    
+      rescue:
+    
+        - name: Check for failure for other reasons than required reboot
+          fail:
+          when: not selinux_reboot_required
 
+        - name: Restart managed host
+          reboot:
 
-
-
-
-
-
+        - name: Reapply SELinux role to complete changes
+          include_role:
+            name: rhel-system-roles.selinux
 
 
 ##########################################################################################
@@ -738,16 +1041,22 @@ pid-file=/var/run/mysqld/mysqld.pid
 
 # Server memory less than 2048MB
 
+---
+- name: Verify memory and set sysctl 
+  hosts: all
+  tasks:
 
+    - name: Set sysctl vm.swappiness if more than 2048MB
+      sysctl:
+        name: vm.swappiness
+        value: '5'
+        state: present
+      when: ansible_memtotal_mb > 2048
 
-
-
-
-
-
-
-
-
+    - name: send message if < 2048
+      debug:
+        msg: Server memory less than 2048MB
+      when: ansible_memtotal_mb < 2048
 
 
 ##########################################################################################
@@ -758,15 +1067,19 @@ pid-file=/var/run/mysqld/mysqld.pid
 #     A file /mnt/mysql_backups/database_list.txt is created that contains the following line: dev,test,qa,prod.
 #     A gzip archive of the file /mnt/mysql_backups/database_list.txt is created and stored in /mnt/mysql_backups/archive.gz.
 
-
-
-
-
-
-
-
-
-
+- name: use archiving 
+  hosts: database 
+  tasks:
+    - name: Create file 
+      lineinfile:
+        create: true
+        path: /mnt/mysql_backups/database_list.txt
+        line: dev,test,qa,prod
+    
+    - name: archiving file 
+      archive:
+        dest: /mnt/mysql_backups/archive.gz
+        path: mnt/mysql_backups/database_list.txt
 
 
 ##########################################################################################
@@ -775,15 +1088,27 @@ pid-file=/var/run/mysqld/mysqld.pid
 # Create a playbook /home/automation/plays/facts.yml that runs on hosts in the database host group and does the following:
 #     A custom Ansible fact server_role=mysql is created that can be retrieved from ansible_local.custom.sample_exam when using Ansible setup module.
 
+- name: use custom variables 
+  hosts: database 
+  tasks:
 
+    - name: Ensure directory exists 
+      file:
+         path: /etc/ansible/facts.d
+         state: directory
+         recurse: true 
 
+    - name: Create file 
+      copy:
+        dest: /etc/ansible/facts.d/custom.fact
+        content: "[sample_exam]\nserver_role=mysql"
 
-
-
-
-
-
-
+    - name: Verifica
+      command: cat /etc/ansible/facts.d/custom.fact   
+    
+    - name: Retrieve 
+      debug:
+        var: ansible_local.custom.sample_exam
 
 ##########################################################################################
 # TASK 16: Software Packages
@@ -793,11 +1118,27 @@ pid-file=/var/run/mysqld/mysqld.pid
 #     Installs lsof and mailx packages on hosts in the database host groups.
 
 
+---
+- name: Install packages
+  hosts: all
+  become: true
+  tasks:
 
+    - name: Install packages on proxy servers
+      yum:
+        name:
+          - tcpdump
+          - mailx
+        state: present
+      when: inventory_hostname in groups['proxy']
 
-
-
-
+    - name: Install packages on database servers
+      yum:
+        name:
+          - lsof
+          - mailx
+        state: present
+      when: inventory_hostname in groups['database']
 
 
 ##########################################################################################
@@ -806,11 +1147,15 @@ pid-file=/var/run/mysqld/mysqld.pid
 # Create a playbook /home/automation/plays/target.yml that runs on hosts in the webservers host group and does the following:
 #     Sets the default boot target to multi-user.
 
-
-
-
-
-
+---
+- name: Change default boot target
+  hosts: webservers
+  tasks:
+    - name: Default boot target is multi-user
+      file:
+        src: /usr/lib/systemd/system/multi-user.target
+        dest: /etc/systemd/system/default.target
+        state: link
 
 ##########################################################################################
 # TASK 18. Create and Use Templates to Create Customised Configuration Files
@@ -833,6 +1178,25 @@ pid-file=/var/run/mysqld/mysqld.pid
 # Note: if the FQDN of any inventory host changes, re-running the playbook should update the file with the new values.
 
 
+# server_list.j2
+
+{% for host in groups['all'] %}
+{{ hostvars[host]['ansible_fqdn'] }}
+{% endfor %}
+
+
+- name: Create server list
+  hosts: all
+  tasks:
+    - name: Create a list of servers on webservers
+      template:
+        src: server_list.j2
+        dest: /etc/server_list.txt
+        owner: devops
+        group: devops
+        mode: 0600
+        setype: net_conf_t
+      when: inventory_hostname in groups['web']
 
 
 
