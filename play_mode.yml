@@ -1,0 +1,7 @@
+- hosts: localhost
+  tasks:
+
+    - copy:
+        src: edu.txt
+        dest: edu-modo.txt
+        mode: u+rw,g-wx,o-rwx

@@ -1,0 +1,6 @@
+---
+- hosts: localhost
+  tasks:
+    - template:
+        src: edu.j2
+        dest: edu.txt

@@ -1,0 +1,12 @@
+---
+- name: teste 
+  hosts: localhost
+#  vault_password_file: passwd
+  vars_files:
+    teste.yml
+
+  tasks:
+
+    - name: debug
+      debug:
+        msg: "{{ nome }}"

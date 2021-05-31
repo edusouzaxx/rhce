@@ -2,6 +2,36 @@ AnsibleUndefinedVariable: ansible.vars.hostvars.Hostvars object has no element
 
     when: inventory_hostname in groups['small_group']
 
+
+  gather_facts: yes
+
+  ou 
+
+  tasks:
+    - name:
+      setup:
+      become: true
+
+  ---------------------------------------------------------------------------------
+
+
+- name: get cluster facts
+  hosts: k8s-cluster
+  tags:
+    - always
+  tasks:
+    - name:
+      setup:
+      become: true
+
+- name: deploy HA Proxy
+  hosts: kube-master
+  become: yes
+  roles:
+    - { role: ansible-role-haproxy }
+
+  ---------------------------------------------------------------------------------
+
 - Trabalhar com hostvars
 
 - Colocar variáveis no inventário
@@ -151,7 +181,7 @@ ansible all -a 'cat /etc/motd'
 # - cria arquivo secret 
 # - cria arquivo com a senha 
  
-ansible-vault create secret.yml
+ansible-vault create secret.yml 
 - pass : redpass
 - pass : redpass
 
@@ -159,6 +189,14 @@ user_password: redhat
 
 
 echo redpass > passwd 
+
+
+--vault_password_file 
+
+ou
+
+[defaults]
+vault_password_file = ./passwd_file 
 
 
 ##########################################################################################
