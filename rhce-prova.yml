@@ -14,7 +14,22 @@ AnsibleUndefinedVariable: ansible.vars.hostvars.Hostvars object has no element
 
   ---------------------------------------------------------------------------------
 
+FORÇAR UM GATHER_FACTS ANTES DO PLAYBOOK QUE CHAMA A ROLE
 
+- name: gather facts
+  hosts: all
+
+- name: balancer configuration
+  hosts: balancer
+  tasks:
+    - name: generate configs
+      template:
+        src: conf.j2
+        dest: "/conf/{{ hostvars[item]['ansible_nodename'] }}.conf"
+      with_hostnames: nodes
+
+
+---------------------------------------------------------------------------------
 - name: get cluster facts
   hosts: k8s-cluster
   tags:
