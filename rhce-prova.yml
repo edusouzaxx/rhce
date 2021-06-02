@@ -49,6 +49,12 @@ FORÇAR UM GATHER_FACTS ANTES DO PLAYBOOK QUE CHAMA A ROLE
 
 - Trabalhar com hostvars
 
+https://docs.ansible.com/ansible/latest/user_guide/playbooks_vars_facts.html
+
+
+  ---------------------------------------------------------------------------------
+
+
 - Colocar variáveis no inventário
 
 - QUESTÃO DE FORKS E SERIAL 
